@@ -24,12 +24,14 @@
 #endif
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
 
 #include <glib.h>
+#include <ell/ell.h>
 
 #include "hal/linux_log.h"
 #include "settings.h"
@@ -44,28 +46,54 @@ static void sig_term(int sig)
 	g_main_loop_quit(main_loop);
 }
 
+static void main_loop_quit(struct l_timeout *timeout, void *user_data)
+{
+	l_main_quit();
+}
+
+static void terminate(void)
+{
+	static bool terminating = false;
+
+	if (terminating)
+		return;
+
+	terminating = true;
+
+	l_timeout_create(1, main_loop_quit, NULL, NULL);
+}
+
+static void signal_handler(struct l_signal *signal, uint32_t signo,
+							void *user_data)
+{
+	switch (signo) {
+	case SIGINT:
+	case SIGTERM:
+		terminate();
+		break;
+	}
+}
+
 int main(int argc, char *argv[])
 {
+	struct l_signal *sig;
 	struct settings settings;
 	int err, retval = 0;
+	sigset_t mask;
 
 	if (!settings_parse(argc, argv, &settings))
 		return EXIT_FAILURE;
-
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-	signal(SIGPIPE, SIG_IGN);
-
-	main_loop = g_main_loop_new(NULL, FALSE);
 
 	hal_log_init("nrfd", settings.detach);
 	hal_log_info("KNOT HAL nrfd");
 
 	if (settings.host)
-		hal_log_error("Development mode: %s:%u", settings.host, settings.port);
+		hal_log_error("Development mode: %s:%u",
+			      settings.host, settings.port);
 
 	err = manager_start(settings.config_path, settings.host, settings.port,
-							settings.spi, settings.channel, settings.dbm, settings.nodes_path);
+			    settings.spi, settings.channel, settings.dbm,
+			    settings.nodes_path);
 	if (err < 0) {
 		hal_log_error("manager_start(): %s(%d)", strerror(-err), -err);
 		retval = EXIT_FAILURE;
@@ -75,7 +103,8 @@ int main(int argc, char *argv[])
 	/* Set user id to nobody */
 	if (setuid(65534) != 0) {
 		err = errno;
-		hal_log_error("Set uid to nobody failed. %s(%d).", strerror(err), err);
+		hal_log_error("Set uid to nobody failed. %s(%d).",
+			      strerror(err), err);
 		retval = EXIT_FAILURE;
 		goto fail_setuid;
 	}
@@ -88,7 +117,28 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	g_main_loop_run(main_loop);
+	if (settings.ell) {
+		if (!l_main_init())
+			return EXIT_FAILURE;
+
+		sigemptyset(&mask);
+		sigaddset(&mask, SIGINT);
+		sigaddset(&mask, SIGTERM);
+
+		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
+		l_main_run();
+
+		l_signal_remove(sig);
+		l_main_exit();
+	} else {
+		signal(SIGTERM, sig_term);
+		signal(SIGINT, sig_term);
+		signal(SIGPIPE, SIG_IGN);
+
+		main_loop = g_main_loop_new(NULL, FALSE);
+		g_main_loop_run(main_loop);
+		g_main_loop_unref(main_loop);
+	}
 
 fail_detach:
 fail_setuid:
@@ -97,8 +147,6 @@ fail_setuid:
 fail_manager_start:
 	hal_log_error("exiting ...");
 	hal_log_close();
-
-	g_main_loop_unref(main_loop);
 
 	return retval;
 }

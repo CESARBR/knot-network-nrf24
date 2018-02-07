@@ -7,14 +7,15 @@
  *
  */
 
-#include "settings.h"
-
+#include <stdbool.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #include <glib.h>
+
+#include "settings.h"
 
 static const char *config_path = "/etc/knot/gatewayConfig.json";
 static const char *nodes_path = "/etc/knot/keys.json";
@@ -24,6 +25,7 @@ static const char *spi = "/dev/spidev0.0";
 static int channel = -1;
 static int dbm = -255;
 static gboolean detach = TRUE;
+static gboolean ell = FALSE;
 
 /*
  * OPTIONAL: describe the valid values ranges
@@ -31,7 +33,8 @@ static gboolean detach = TRUE;
  */
 
 static GOptionEntry options_spec[] = {
-
+	{ "ell", 'e', 0, G_OPTION_ARG_NONE, &ell,
+					"Use ELL instead of glib" },
 	{ "config", 'c', 0, G_OPTION_ARG_STRING, &config_path,
 					"configuration file path", NULL },
 	{ "nodes", 'f', 0, G_OPTION_ARG_STRING, &nodes_path,
@@ -78,6 +81,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	settings->channel = channel;
 	settings->dbm = dbm;
 	settings->detach = detach;
+	settings->ell = ell;
 
 	return EXIT_SUCCESS;
 }
