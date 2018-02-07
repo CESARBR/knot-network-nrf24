@@ -1,0 +1,32 @@
+nRF2 user space daemon
+********************************
+
+This repository contains source code of the service responsible for
+managing nRF24 communication.
+
+Copyright (C) 2017 CESAR. All rights reserved.
+
+
+Embedded Linux library
+======================
+
+In order to compile the nRF24 daemon, the development version of Embedded
+Linux library (ELL) needs to be available. ELL repositories can be found
+here:
+	git://git.kernel.org/pub/scm/libs/ell/ell.git
+	https://kernel.googlesource.com/pub/scm/libs/ell/ell.git
+
+The build system creates symbolic links to ELL sources. ELL source code
+should be placed at the same top level directory as the Wireless PAN
+source code:
+
+	.
+	|--- ell.git
+	|    |--- ell
+	|    `--- unit
+	`--- iwpan.git
+	     |--- src
+	     `--- unit
+
+It is not required to build or install Embedded Linux library. Wireless PAN
+build is configured to build and link ELL internally.
