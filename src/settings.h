@@ -7,8 +7,6 @@
  *
  */
 
-#include <stdbool.h>
-
 struct settings {
 	const char *config_path;
 	const char *nodes_path;
@@ -21,7 +19,6 @@ struct settings {
 	int dbm;
 
 	bool detach;
-	bool ell;
 	bool help;
 } settings;
 

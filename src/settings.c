@@ -25,7 +25,6 @@ static const char *spi = "/dev/spidev0.0";
 static int channel = -1;
 static int dbm = -255;
 static bool detach = true;
-static bool ell = false;
 static bool help = false;
 
 static void usage(void)
@@ -34,7 +33,6 @@ static void usage(void)
 		"Usage:\n");
 	printf("\tnrfd [options]\n");
 	printf("Options:\n"
-		"\t-e, --ell          Use ELL instead of glib\n"
 		"\t-c, --config       Configuration file path\n"
 		"\t-f, --nodes        Known nodes file path\n"
 		"\t-h, --host         Host to forward KNoT\n"
@@ -47,7 +45,6 @@ static void usage(void)
 }
 
 static const struct option main_options[] = {
-	{ "ell",		no_argument,		NULL, 'e' },
 	{ "config",		required_argument,	NULL, 'c' },
 	{ "nodes",		required_argument,	NULL, 'f' },
 	{ "host",		required_argument,	NULL, 'h' },
@@ -67,14 +64,11 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 	int opt;
 
 	for (;;) {
-		opt = getopt_long(argc, argv, "ec:f:h:p:s:C:t:nH", main_options, NULL);
+		opt = getopt_long(argc, argv, "c:f:h:p:s:C:t:nH", main_options, NULL);
 		if (opt < 0)
 			break;
 
 		switch (opt) {
-		case 'e':
-			settings->ell = true;
-			break;
 		case 'c':
 			settings->config_path = optarg;
 			break;
@@ -119,9 +113,12 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 static int is_valid_config_file(const char *config_path)
 {
 	struct stat sb;
+	int err;
 
 	if (stat(config_path, &sb) == -1) {
-		fprintf(stderr, "%s: %s(%d)\n", config_path, strerror(errno), errno);
+		err = errno;
+		fprintf(stderr, "%s: %s(%d)\n",
+			config_path, strerror(err), err);
 		return EXIT_FAILURE;
 	}
 
@@ -153,7 +150,6 @@ int settings_parse(int argc, char *argv[], struct settings *settings)
 	settings->channel = channel;
 	settings->dbm = dbm;
 	settings->detach = detach;
-	settings->ell = ell;
 	settings->help = help;
 
 	if (!parse_args(argc, argv, settings))

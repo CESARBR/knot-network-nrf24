@@ -30,7 +30,6 @@
 #include <errno.h>
 #include <string.h>
 
-#include <glib.h>
 #include <ell/ell.h>
 
 #include "hal/linux_log.h"
@@ -38,13 +37,6 @@
 #include "manager.h"
 
 #define CHANNEL_DEFAULT NRF24_CH_MIN
-
-static GMainLoop *main_loop;
-
-static void sig_term(int sig)
-{
-	g_main_loop_quit(main_loop);
-}
 
 static void main_loop_quit(struct l_timeout *timeout, void *user_data)
 {
@@ -93,23 +85,14 @@ int main(int argc, char *argv[])
 	if (settings.host)
 		hal_log_error("Development mode: %s:%u",
 			      settings.host, settings.port);
-	if (settings.ell) {
-		if (!l_main_init())
-			return EXIT_FAILURE;
+	if (!l_main_init())
+		return EXIT_FAILURE;
 
-		sigemptyset(&mask);
-		sigaddset(&mask, SIGINT);
-		sigaddset(&mask, SIGTERM);
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
 
-		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
-	} else {
-		signal(SIGTERM, sig_term);
-		signal(SIGINT, sig_term);
-		signal(SIGPIPE, SIG_IGN);
-
-		main_loop = g_main_loop_new(NULL, FALSE);
-	}
-
+	sig = l_signal_create(&mask, signal_handler, NULL, NULL);
 
 	err = manager_start(settings.config_path, settings.host, settings.port,
 			    settings.spi, settings.channel, settings.dbm,
@@ -137,17 +120,10 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (settings.ell) {
-		hal_log_info("Running using ell ...");
-		l_main_run();
+	l_main_run();
 
-		l_signal_remove(sig);
-		l_main_exit();
-	} else {
-		hal_log_info("Running using glib ...");
-		g_main_loop_run(main_loop);
-		g_main_loop_unref(main_loop);
-	}
+	l_signal_remove(sig);
+	l_main_exit();
 
 fail_detach:
 fail_setuid:
