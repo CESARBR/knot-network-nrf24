@@ -90,10 +90,27 @@ int main(int argc, char *argv[])
 	if (settings.host)
 		hal_log_error("Development mode: %s:%u",
 			      settings.host, settings.port);
+	if (settings.ell) {
+		if (!l_main_init())
+			return EXIT_FAILURE;
+
+		sigemptyset(&mask);
+		sigaddset(&mask, SIGINT);
+		sigaddset(&mask, SIGTERM);
+
+		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
+	} else {
+		signal(SIGTERM, sig_term);
+		signal(SIGINT, sig_term);
+		signal(SIGPIPE, SIG_IGN);
+
+		main_loop = g_main_loop_new(NULL, FALSE);
+	}
+
 
 	err = manager_start(settings.config_path, settings.host, settings.port,
 			    settings.spi, settings.channel, settings.dbm,
-			    settings.nodes_path);
+			    settings.nodes_path, settings.ell);
 	if (err < 0) {
 		hal_log_error("manager_start(): %s(%d)", strerror(-err), -err);
 		retval = EXIT_FAILURE;
@@ -118,24 +135,13 @@ int main(int argc, char *argv[])
 	}
 
 	if (settings.ell) {
-		if (!l_main_init())
-			return EXIT_FAILURE;
-
-		sigemptyset(&mask);
-		sigaddset(&mask, SIGINT);
-		sigaddset(&mask, SIGTERM);
-
-		sig = l_signal_create(&mask, signal_handler, NULL, NULL);
+		hal_log_info("Running using ell ...");
 		l_main_run();
 
 		l_signal_remove(sig);
 		l_main_exit();
 	} else {
-		signal(SIGTERM, sig_term);
-		signal(SIGINT, sig_term);
-		signal(SIGPIPE, SIG_IGN);
-
-		main_loop = g_main_loop_new(NULL, FALSE);
+		hal_log_info("Running using glib ...");
 		g_main_loop_run(main_loop);
 		g_main_loop_unref(main_loop);
 	}

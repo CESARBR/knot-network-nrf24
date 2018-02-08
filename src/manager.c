@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <glib.h>
+#include <ell/ell.h>
 #include <gio/gio.h>
 #include <json-c/json.h>
 #include <sys/socket.h>
@@ -40,8 +41,11 @@
 static int mgmtfd;
 static guint mgmtwatch;
 static guint dbus_id;
+static bool use_ell = TRUE;
 static struct in_addr inet_address;
 static int tcp_port;
+
+struct l_dbus *g_dbus = NULL;
 
 static struct adapter {
 	struct nrf24_mac mac;
@@ -582,21 +586,52 @@ static void on_name_lost(GDBusConnection *connection, const gchar *name,
 	exit(EXIT_FAILURE);
 }
 
+static void dbus_disconnect_callback(void *user_data)
+{
+	hal_log_info("D-Bus disconnected");
+}
+
+static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
+					bool queued, void *user_data)
+{
+	if (!success)
+		hal_log_error("Name request failed");
+}
+
+static void dbus_ready_callback(void *user_data)
+{
+	l_dbus_name_acquire(g_dbus, "org.cesar.knot.nrf", false, false, true,
+			    dbus_request_name_callback, NULL);
+
+	if (!l_dbus_object_manager_enable(g_dbus))
+		hal_log_error("Unable to register the ObjectManager");
+}
+
 static guint dbus_init(struct nrf24_mac mac)
 {
-	guint owner_id;
+	guint owner_id = 0;
 
-	introspection_data = g_dbus_node_info_new_for_xml(introspection_xml,
-									NULL);
-	g_assert(introspection_data != NULL);
-
-	owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
-					"org.cesar.knot.nrf",
-					G_BUS_NAME_OWNER_FLAGS_NONE,
-					on_bus_acquired, on_name_acquired,
-					on_name_lost, NULL, NULL);
 	adapter.mac = mac;
 	adapter.powered = TRUE;
+
+	if (!use_ell) {
+		introspection_data = g_dbus_node_info_new_for_xml(
+						  introspection_xml, NULL);
+		g_assert(introspection_data != NULL);
+
+		owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
+					  "org.cesar.knot.nrf",
+					  G_BUS_NAME_OWNER_FLAGS_NONE,
+					  on_bus_acquired, on_name_acquired,
+					  on_name_lost, NULL, NULL);
+	} else {
+		g_dbus = l_dbus_new_default(L_DBUS_SYSTEM_BUS);
+
+		l_dbus_set_ready_handler(g_dbus, dbus_ready_callback,
+					 g_dbus, NULL);
+		l_dbus_set_disconnect_handler(g_dbus, dbus_disconnect_callback,
+					      NULL, NULL);
+	}
 
 	return owner_id;
 }
@@ -1272,7 +1307,7 @@ static gboolean timeout_iterator(gpointer user_data)
 
 int manager_start(const char *file, const char *host, int port,
 					const char *spi, int channel, int dbm,
-					const char *nodes_file)
+					const char *nodes_file, bool ell)
 {
 	int cfg_channel = 76, cfg_dbm = 0;
 	char *json_str;
@@ -1315,6 +1350,9 @@ int manager_start(const char *file, const char *host, int port,
 		hal_log_error("Invalid configuration file(%d): %s", err, file);
 		return err;
 	}
+
+	use_ell = ell;
+
 	/*
 	 * Priority order: 1) command line 2) config file.
 	 * If the user does not provide channel at command line (or channel is
@@ -1358,7 +1396,8 @@ int manager_start(const char *file, const char *host, int port,
 
 void manager_stop(void)
 {
-	dbus_on_close(dbus_id);
+	if (!use_ell)
+		dbus_on_close(dbus_id);
 	radio_stop();
 	g_hash_table_destroy(peer_bcast_table);
 }
