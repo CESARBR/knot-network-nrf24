@@ -44,6 +44,8 @@
 #define MAC_ADDRESS_SIZE		24
 #define BCAST_TIMEOUT			10000
 
+#define ADAPTER_INTERFACE		"org.cesar.nrf.Adapter1"
+
 #ifndef MIN
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
 #endif
@@ -185,6 +187,48 @@ failure:
 	return err;
 }
 
+static bool property_get_powered(struct l_dbus *dbus,
+				     struct l_dbus_message *msg,
+				     struct l_dbus_message_builder *builder,
+				     void *user_data)
+{
+	struct adapter *adapter = user_data;
+
+	l_dbus_message_builder_append_basic(builder, 'b', &adapter->powered);
+	l_info("GetProperty(Powered = %d)", adapter->powered);
+
+	return true;
+}
+
+static bool property_get_address(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct adapter *adapter = user_data;
+	char str[MAC_ADDRESS_SIZE];
+
+	nrf24_mac2str(&adapter->mac, str);
+
+	l_dbus_message_builder_append_basic(builder, 's', str);
+	l_info("GetProperty(Address = %s)", str);
+
+	return true;
+}
+
+static void register_property(struct l_dbus_interface *interface)
+{
+	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
+				       property_get_powered,
+				       NULL))
+		hal_log_error("Can't add 'Powered' property");
+
+	if (!l_dbus_interface_property(interface, "Address", 0, "s",
+				       property_get_address,
+				       NULL))
+		hal_log_error("Can't add 'Address' property");
+}
+
 static void dbus_disconnect_callback(void *user_data)
 {
 	hal_log_info("D-Bus disconnected");
@@ -193,8 +237,31 @@ static void dbus_disconnect_callback(void *user_data)
 static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 					bool queued, void *user_data)
 {
-	if (!success)
+	const char *path = "/nrf0";
+	if (!success) {
 		hal_log_error("Name request failed");
+		return;
+	}
+
+	if (!l_dbus_register_interface(g_dbus,
+				       ADAPTER_INTERFACE,
+				       register_property,
+				       NULL, false))
+		hal_log_error("dbus: unable to register %s", ADAPTER_INTERFACE);
+
+	if (!l_dbus_object_add_interface(g_dbus,
+					 path,
+					 ADAPTER_INTERFACE,
+					 &adapter))
+	    hal_log_error("dbus: unable to add %s to %s",
+					ADAPTER_INTERFACE, path);
+
+	if (!l_dbus_object_add_interface(g_dbus,
+					 path,
+					 L_DBUS_INTERFACE_PROPERTIES,
+					 &adapter))
+	    hal_log_error("dbus: unable to add %s to %s",
+					L_DBUS_INTERFACE_PROPERTIES, path);
 }
 
 static void dbus_ready_callback(void *user_data)
