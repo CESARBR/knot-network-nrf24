@@ -7,6 +7,8 @@
  *
  */
 
+#include <stdbool.h>
+
 struct settings {
 	const char *config_path;
 	const char *nodes_path;
@@ -18,8 +20,9 @@ struct settings {
 	int channel;
 	int dbm;
 
-	int detach;
+	bool detach;
 	bool ell;
+	bool help;
 } settings;
 
 int settings_parse(int argc, char *argv[], struct settings *settings);

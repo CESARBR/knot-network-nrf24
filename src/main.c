@@ -84,6 +84,9 @@ int main(int argc, char *argv[])
 	if (!settings_parse(argc, argv, &settings))
 		return EXIT_FAILURE;
 
+	if (settings.help)
+		return EXIT_SUCCESS;
+
 	hal_log_init("nrfd", settings.detach);
 	hal_log_info("KNOT HAL nrfd");
 
