@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
 
 	err = manager_start(settings.config_path, settings.host, settings.port,
 			    settings.spi, settings.channel, settings.dbm,
-			    settings.nodes_path, settings.ell);
+			    settings.nodes_path);
 	if (err < 0) {
 		hal_log_error("manager_start(): %s(%d)", strerror(-err), -err);
 		retval = EXIT_FAILURE;

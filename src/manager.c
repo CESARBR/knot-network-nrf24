@@ -40,8 +40,6 @@
 
 static int mgmtfd;
 static guint mgmtwatch;
-static guint dbus_id;
-static bool use_ell = TRUE;
 static struct in_addr inet_address;
 static int tcp_port;
 
@@ -84,30 +82,6 @@ struct beacon {
 
 static GHashTable *peer_bcast_table;
 static uint8_t count_clients;
-
-static GDBusNodeInfo *introspection_data;
-
-/* Introspection data for the service we are exporting */
-static const gchar introspection_xml[] =
-	"<node>"
-	"  <interface name='org.cesar.knot.nrf0.Adapter'>"
-	"    <method name='AddDevice'>"
-	"      <arg type='s' name='mac' direction='in'/>"
-	"      <arg type='s' name='key' direction='in'/>"
-	"      <arg type='s' name='name' direction='in'/>"
-	"      <arg type='b' name='response' direction='out'/>"
-	"    </method>"
-	"    <method name='RemoveDevice'>"
-	"      <arg type='s' name='mac' direction='in'/>"
-	"      <arg type='b' name='response' direction='out'/>"
-	"    </method>"
-	"    <property type='s' name='Address' access='read'/>"
-	"    <property type='s' name='Powered' access='readwrite'/>"
-	"    <method name='GetBroadcastingDevices'>"
-	"      <arg type='s' name='response' direction='out'/>"
-	"    </method>"
-	"  </interface>"
-	"</node>";
 
 static void beacon_free(void *user_data)
 {
@@ -175,204 +149,6 @@ failure:
 	return err;
 }
 
-static GVariant *handle_device_get_property(GDBusConnection *connection,
-				const gchar *sender,
-				const gchar *object_path,
-				const gchar *interface_name,
-				const gchar *property_name,
-				GError **error,
-				gpointer user_data)
-{
-	GVariant *gvar = NULL;
-	char str_mac[MAC_ADDRESS_SIZE];
-	gint dev;
-
-	dev = GPOINTER_TO_INT(user_data);
-	/* TODO implement Alias and Status */
-	if (g_strcmp0(property_name, "Mac") == 0) {
-		nrf24_mac2str(&adapter.known_peers[dev].addr, str_mac);
-		gvar = g_variant_new("s", str_mac);
-	} else if (g_strcmp0(property_name, "Alias") == 0) {
-		gvar = g_variant_new("s", adapter.known_peers[dev].alias);
-	} else if (g_strcmp0(property_name, "Status") == 0) {
-		gvar = g_variant_new_boolean(adapter.known_peers[dev].status);
-	} else {
-		gvar = g_variant_new_string("Unknown property requested");
-	}
-
-	return gvar;
-}
-
-static int8_t new_device_object(GDBusConnection *connection, uint32_t free_pos)
-{
-	uint8_t i;
-	guint registration_id;
-	GDBusInterfaceInfo *interface;
-	GDBusPropertyInfo **properties;
-	gchar object_path[26];
-	gchar *name[] = {"Mac", "Alias", "Status"};
-	gchar *signature[] = {"s", "s", "b"};
-	GDBusInterfaceVTable interface_device_vtable = {
-		NULL,
-		handle_device_get_property,
-		NULL
-	};
-
-	properties = g_new0(GDBusPropertyInfo *, 4);
-	for (i = 0; i < 3; i++) {
-		properties[i] = g_new0(GDBusPropertyInfo, 1);
-		/*
-		 * properties->ref_count is incremented here because when
-		 * registering an object the function only increments
-		 * interface->ref_count. Not doing this leads to the memory
-		 * of properties not being deallocated when we call
-		 * g_dbus_connection_unregister_object.
-		 */
-		g_atomic_int_inc(&properties[i]->ref_count);
-		properties[i]->name = g_strdup(name[i]);
-		properties[i]->signature = g_strdup(signature[i]);
-		properties[i]->flags = G_DBUS_PROPERTY_INFO_FLAGS_READABLE;
-		properties[i]->annotations = NULL;
-	}
-
-	interface = g_new0(GDBusInterfaceInfo, 1);
-	interface->name = g_strdup("org.cesar.knot.nrf.Device");
-	interface->methods = NULL;
-	interface->signals = NULL;
-	interface->properties = properties;
-	interface->annotations = NULL;
-
-	snprintf(object_path, 26, "/org/cesar/knot/nrf0/mac%d", free_pos);
-
-	registration_id = g_dbus_connection_register_object(
-					connection,
-					object_path,
-					interface,
-					&interface_device_vtable,
-					GINT_TO_POINTER(free_pos),  /* user data */
-					NULL,  /* user data free func */
-					NULL); /* GError** */
-	/* Free mem if fail */
-	if (registration_id <= 0) {
-		for (i = 0; properties[i] != NULL; i++) {
-			g_free(properties[i]->name);
-			g_free(properties[i]->signature);
-			g_free(properties[i]);
-		}
-		g_free(properties);
-		g_free(interface->name);
-		g_free(interface);
-		return -1;
-	}
-	adapter.known_peers[free_pos].registration_id = registration_id;
-	return 0;
-}
-
-static gboolean add_known_device(GDBusConnection *connection, const gchar *mac,
-					const gchar *key, const gchar *name)
-{
-	uint8_t alloc_pos, i;
-	int32_t free_pos;
-	gboolean response = FALSE;
-	struct nrf24_mac new_dev;
-
-	if (nrf24_str2mac(mac, &new_dev) < 0)
-		goto done;
-
-	for (i = 0, alloc_pos = 0, free_pos = -1; alloc_pos <
-					adapter.known_peers_size; i++) {
-		if (adapter.known_peers[i].addr.address.uint64 ==
-						new_dev.address.uint64) {
-			if (write_file(mac, key, NULL) < 0)
-				hal_log_error("Error writing to file");
-			response = TRUE;
-			goto done;
-
-		} else if (adapter.known_peers[i].addr.address.uint64 != 0) {
-			alloc_pos++;
-		} else if (free_pos < 0) {
-			/* store available position */
-			free_pos = i;
-		}
-	}
-	/* If there is no empty space between allocated spaces */
-	if (free_pos < 0)
-		free_pos = i;
-
-	/* If struct has free space add device to struct */
-	if (adapter.known_peers_size < MAX_PEERS) {
-		if (new_device_object(connection, free_pos) < 0)
-			goto done;
-
-		adapter.known_peers[free_pos].addr.address.uint64 =
-							new_dev.address.uint64;
-		adapter.known_peers[free_pos].alias = g_strdup(name);
-		adapter.known_peers[free_pos].status = FALSE;
-		/* TODO: Set key for this mac */
-		if (write_file(mac, key, name) < 0)
-			hal_log_error("Error writing to file");
-		adapter.known_peers_size++;
-		response = TRUE;
-	}
-
-done:
-	return response;
-}
-
-static gboolean remove_known_device(GDBusConnection *connection,
-							const gchar *mac)
-{
-	uint8_t i;
-	gboolean response = FALSE;
-	struct nrf24_mac dev;
-
-	if (nrf24_str2mac(mac, &dev) < 0)
-		return FALSE;
-
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (adapter.known_peers[i].addr.address.uint64 ==
-							dev.address.uint64) {
-			g_dbus_connection_unregister_object(connection,
-				adapter.known_peers[i].registration_id);
-
-			/* Remove mac from struct */
-			adapter.known_peers[i].addr.address.uint64 = 0;
-			g_free(adapter.known_peers[i].alias);
-			adapter.known_peers_size--;
-			if (write_file(mac, NULL, NULL) < 0)
-				hal_log_error("Error writing to file");
-			response = TRUE;
-			break;
-		}
-	}
-
-	/* TODO: merge peers and adapter list */
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (dev.address.uint64 != peers[i].mac)
-			continue;
-
-		if (peers[i].socket_fd >= 0) {
-			hal_comm_close(peers[i].socket_fd);
-			peers[i].socket_fd = -1;
-		}
-
-		peers[i].mac = 0;
-
-		if (peers[i].kwatch) {
-			g_source_remove(peers[i].kwatch);
-			peers[i].kwatch = 0;
-		}
-
-		if (peers->ksock >= 0) {
-			close(peers->ksock);
-			peers->ksock = 0;
-		}
-		break;
-	}
-
-	return response;
-}
-
 static int peers_to_json(struct json_object *peers_bcast_json)
 {
 	GHashTableIter iter;
@@ -401,191 +177,6 @@ static int peers_to_json(struct json_object *peers_bcast_json)
 	return 0;
 }
 
-static void handle_method_call(GDBusConnection *connection,
-				const gchar *sender,
-				const gchar *object_path,
-				const gchar *interface_name,
-				const gchar *method_name,
-				GVariant *parameters,
-				GDBusMethodInvocation *invocation,
-				gpointer user_data)
-{
-	const gchar *mac;
-	const gchar *key;
-	const gchar *name;
-	gboolean response;
-	struct json_object *peers_bcast;
-
-	if (g_strcmp0(method_name, "AddDevice") == 0) {
-		g_variant_get(parameters, "(&s&s&s)", &mac, &key,&name);
-		/* Add or Update mac address */
-		response = add_known_device(connection, mac, key, name);
-		g_dbus_method_invocation_return_value(invocation,
-				g_variant_new("(b)", response));
-	} else if (g_strcmp0(method_name, "RemoveDevice") == 0) {
-		g_variant_get(parameters, "(&s)", &mac);
-		/* Remove device */
-		response = remove_known_device(connection, mac);
-		g_dbus_method_invocation_return_value(invocation,
-				g_variant_new("(b)", response));
-	} else if (g_strcmp0("GetBroadcastingDevices", method_name) == 0) {
-		/* FIXME: Temporary solution it will be replaced by signals */
-		/* Get list of devices that sent presence recently */
-		peers_bcast = json_object_new_array();
-		peers_to_json(peers_bcast);
-		g_dbus_method_invocation_return_value(invocation,
-				g_variant_new("(s)",
-				json_object_to_json_string(peers_bcast)));
-		json_object_put(peers_bcast);
-	}
-}
-
-static GVariant *handle_get_property(GDBusConnection  *connection,
-				const gchar *sender,
-				const gchar *object_path,
-				const gchar *interface_name,
-				const gchar *property_name,
-				GError **gerr,
-				gpointer user_data)
-{
-	GVariant *gvar = NULL;
-	char str_mac[MAC_ADDRESS_SIZE];
-
-	if (g_strcmp0(property_name, "Address") == 0) {
-		nrf24_mac2str(&adapter.mac, str_mac);
-		gvar = g_variant_new("s", str_mac);
-	} else if (g_strcmp0(property_name, "Powered") == 0) {
-		gvar = g_variant_new_boolean(adapter.powered);
-	} else {
-		gvar = g_variant_new_string("Unknown property requested");
-	}
-
-	return gvar;
-}
-
-static gboolean handle_set_property(GDBusConnection  *connection,
-				const gchar *sender,
-				const gchar *object_path,
-				const gchar *interface_name,
-				const gchar *property_name,
-				GVariant *value,
-				GError **gerr,
-				gpointer user_data)
-{
-	if (g_strcmp0(property_name, "Powered") == 0) {
-		adapter.powered = g_variant_get_boolean(value);
-		/* TODO turn adapter on or off */
-	}
-	return TRUE;
-}
-
-static const GDBusInterfaceVTable interface_vtable = {
-	handle_method_call,
-	handle_get_property,
-	handle_set_property
-};
-
-static void on_bus_acquired(GDBusConnection *connection, const gchar *name,
-							gpointer user_data)
-{
-	uint8_t i, j, k;
-	guint registration_id;
-	GDBusInterfaceInfo *interface;
-	GDBusPropertyInfo **properties;
-	gchar object_path[26];
-	gchar *obj_name[] = {"Mac", "Alias", "Status"};
-	gchar *signature[] = {"s", "s", "b"};
-	GDBusInterfaceVTable interface_device_vtable = {
-		NULL,
-		handle_device_get_property,
-		NULL
-	};
-
-	registration_id = g_dbus_connection_register_object(connection,
-					"/org/cesar/knot/nrf0",
-					introspection_data->interfaces[0],
-					&interface_vtable,
-					NULL,  /* user_data */
-					NULL,  /* user_data_free_func */
-					NULL); /* GError** */
-	g_assert(registration_id > 0);
-
-	/* Register on dbus every device already known */
-	for (j = 0, k = 0; j < adapter.known_peers_size; j++, k++) {
-		properties = g_new0(GDBusPropertyInfo *, 4);
-		for (i = 0; i < 3; i++) {
-			properties[i] = g_new0(GDBusPropertyInfo, 1);
-			/*
-			 * properties->ref_count is incremented here because
-			 * when registering an object the function only
-			 * increments interface->ref_count. Not doing this leads
-			 * to the memory of properties not being deallocated
-			 * when we call g_dbus_connection_unregister_object.
-			 */
-			g_atomic_int_inc(&properties[i]->ref_count);
-			properties[i]->name = g_strdup(obj_name[i]);
-			properties[i]->signature = g_strdup(signature[i]);
-			properties[i]->flags =
-					G_DBUS_PROPERTY_INFO_FLAGS_READABLE;
-			properties[i]->annotations = NULL;
-		}
-
-		interface = g_new0(GDBusInterfaceInfo, 1);
-		interface->name = g_strdup("org.cesar.knot.mac.Device");
-		interface->methods = NULL;
-		interface->signals = NULL;
-		interface->properties = properties;
-		interface->annotations = NULL;
-
-		snprintf(object_path, 26, "/org/cesar/knot/nrf0/mac%d", k);
-
-		registration_id = g_dbus_connection_register_object(
-						connection,
-						object_path,
-						interface,
-						&interface_device_vtable,
-						GINT_TO_POINTER(k),
-						NULL,  /* user data free func */
-						NULL); /* GError** */
-		if (registration_id <= 0) {
-			for (i = 0; properties[i] != NULL; i++) {
-				g_free(properties[i]->name);
-				g_free(properties[i]->signature);
-				g_free(properties[i]);
-			}
-			g_free(properties);
-			g_free(interface->name);
-			g_free(interface);
-			k--;
-			continue;
-		}
-		adapter.known_peers[k].registration_id = registration_id;
-	}
-}
-
-static void on_name_acquired(GDBusConnection *connection, const gchar *name,
-							gpointer user_data)
-{
-	/* Connection successfully estabilished */
-	hal_log_info("Connection estabilished");
-}
-
-static void on_name_lost(GDBusConnection *connection, const gchar *name,
-							gpointer user_data)
-{
-	if (!connection) {
-		/* Connection error */
-		hal_log_error("Connection failure");
-	} else {
-		/* Name not owned */
-		hal_log_error("Name can't be obtained");
-	}
-
-	g_free(adapter.file_name);
-	g_dbus_node_info_unref(introspection_data);
-	exit(EXIT_FAILURE);
-}
-
 static void dbus_disconnect_callback(void *user_data)
 {
 	hal_log_info("D-Bus disconnected");
@@ -607,36 +198,17 @@ static void dbus_ready_callback(void *user_data)
 		hal_log_error("Unable to register the ObjectManager");
 }
 
-static guint dbus_init(struct nrf24_mac mac)
+static void dbus_start(void)
 {
-	guint owner_id = 0;
+	g_dbus = l_dbus_new_default(L_DBUS_SYSTEM_BUS);
 
-	adapter.mac = mac;
-	adapter.powered = TRUE;
-
-	if (!use_ell) {
-		introspection_data = g_dbus_node_info_new_for_xml(
-						  introspection_xml, NULL);
-		g_assert(introspection_data != NULL);
-
-		owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
-					  "org.cesar.knot.nrf",
-					  G_BUS_NAME_OWNER_FLAGS_NONE,
-					  on_bus_acquired, on_name_acquired,
-					  on_name_lost, NULL, NULL);
-	} else {
-		g_dbus = l_dbus_new_default(L_DBUS_SYSTEM_BUS);
-
-		l_dbus_set_ready_handler(g_dbus, dbus_ready_callback,
-					 g_dbus, NULL);
-		l_dbus_set_disconnect_handler(g_dbus, dbus_disconnect_callback,
-					      NULL, NULL);
-	}
-
-	return owner_id;
+	l_dbus_set_ready_handler(g_dbus, dbus_ready_callback,
+				 g_dbus, NULL);
+	l_dbus_set_disconnect_handler(g_dbus, dbus_disconnect_callback,
+				      NULL, NULL);
 }
 
-static void dbus_on_close(guint owner_id)
+static void dbus_stop(void)
 {
 	uint8_t i;
 
@@ -646,8 +218,6 @@ static void dbus_on_close(guint owner_id)
 	}
 
 	g_free(adapter.file_name);
-	g_bus_unown_name(owner_id);
-	g_dbus_node_info_unref(introspection_data);
 }
 
 /* Check if peer is on list of known peers */
@@ -1307,7 +877,7 @@ static gboolean timeout_iterator(gpointer user_data)
 
 int manager_start(const char *file, const char *host, int port,
 					const char *spi, int channel, int dbm,
-					const char *nodes_file, bool ell)
+					const char *nodes_file)
 {
 	int cfg_channel = 76, cfg_dbm = 0;
 	char *json_str;
@@ -1351,8 +921,6 @@ int manager_start(const char *file, const char *host, int port,
 		return err;
 	}
 
-	use_ell = ell;
-
 	/*
 	 * Priority order: 1) command line 2) config file.
 	 * If the user does not provide channel at command line (or channel is
@@ -1370,7 +938,7 @@ int manager_start(const char *file, const char *host, int port,
 		dbm = cfg_dbm;
 
 	/* Start server dbus */
-	dbus_id = dbus_init(mac);
+	dbus_start();
 
 	/* TCP development mode: RPi(nrfd) connected to Linux(knotd) */
 	if (host) {
@@ -1396,8 +964,7 @@ int manager_start(const char *file, const char *host, int port,
 
 void manager_stop(void)
 {
-	if (!use_ell)
-		dbus_on_close(dbus_id);
+	dbus_stop();
 	radio_stop();
 	g_hash_table_destroy(peer_bcast_table);
 }
