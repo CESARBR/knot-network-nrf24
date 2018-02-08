@@ -52,15 +52,9 @@ static struct adapter {
 	gchar *keys_pathname;
 	gboolean powered;
 
-	struct l_queue *peer_list;
-
-	/* Struct with the known peers */
-	struct {
-		struct nrf24_mac addr;
-		gchar *alias;
-		gboolean status;
-	} known_peers[MAX_PEERS];
-	guint known_peers_size;
+	struct l_queue *peer_offline_list; /* Disconnected */
+	struct l_queue *peer_online_list; /* Connected */
+	struct l_queue *beacon_list;
 } adapter;
 
 struct peer {
@@ -71,21 +65,11 @@ struct peer {
 	guint kwatch; /* KNoT raw socket watch */
 };
 
-static struct peer peers[MAX_PEERS] = {
-	{.socket_fd = -1},
-	{.socket_fd = -1},
-	{.socket_fd = -1},
-	{.socket_fd = -1},
-	{.socket_fd = -1}
-};
-
 struct beacon {
+	struct nrf24_mac addr;
 	char *name;
 	unsigned long last_beacon;
 };
-
-static GHashTable *peer_bcast_table;
-static uint8_t count_clients;
 
 static void beacon_free(void *user_data)
 {
@@ -102,6 +86,36 @@ static void peer_free(void *data)
 	l_free(peer->alias);
 
 	l_free(peer);
+}
+
+static bool beacon_match(const void *a, const void *b)
+{
+	const struct beacon *beacon = a;
+	const struct nrf24_mac *addr = b;
+	int ret = memcmp(&beacon->addr, addr, sizeof(beacon->addr));
+
+	return (ret ? false : true);
+}
+
+static bool beacon_if_expired(const void *data, const void *user_data)
+{
+	const struct beacon *peer = data;
+	const int *ms = user_data;
+
+	/* If it returns true the key/value is removed */
+	if (hal_timeout(*ms, peer->last_beacon, BCAST_TIMEOUT) > 0)
+		return true;
+
+	return false;
+}
+
+static bool peer_match(const void *a, const void *b)
+{
+	const struct peer *peer = a;
+	const struct nrf24_mac *addr = b;
+	int ret = memcmp(&peer->addr, addr, sizeof(peer->addr));
+
+	return (ret ? false : true);
 }
 
 static int write_file(const gchar *addr, const gchar *key, const gchar *name)
@@ -162,34 +176,6 @@ failure:
 	return err;
 }
 
-static int peers_to_json(struct json_object *peers_bcast_json)
-{
-	GHashTableIter iter;
-	gpointer key, value;
-	struct json_object *jobj;
-
-	g_hash_table_iter_init (&iter, peer_bcast_table);
-
-	while (g_hash_table_iter_next (&iter, &key, &value)) {
-		struct beacon *peer = value;
-
-		jobj = json_object_new_object();
-		if (peer == NULL)
-			continue;
-
-		json_object_object_add(jobj, "name",
-				       json_object_new_string(peer->name));
-		json_object_object_add(jobj, "mac",
-					json_object_new_string((char *) key));
-		json_object_object_add(jobj, "last_beacon",
-				json_object_new_int(peer->last_beacon));
-
-		json_object_array_add(peers_bcast_json, jobj);
-	}
-
-	return 0;
-}
-
 static void dbus_disconnect_callback(void *user_data)
 {
 	hal_log_info("D-Bus disconnected");
@@ -219,57 +205,6 @@ static void dbus_start(void)
 				 g_dbus, NULL);
 	l_dbus_set_disconnect_handler(g_dbus, dbus_disconnect_callback,
 				      NULL, NULL);
-}
-
-static void dbus_stop(void)
-{
-	uint8_t i;
-
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (adapter.known_peers[i].addr.address.uint64 != 0)
-			g_free(adapter.known_peers[i].alias);
-	}
-
-	g_free(adapter.keys_pathname);
-}
-
-/* Check if peer is on list of known peers */
-static int8_t check_permission(struct nrf24_mac mac)
-{
-	uint8_t i;
-
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (mac.address.uint64 ==
-				adapter.known_peers[i].addr.address.uint64)
-			return 0;
-	}
-
-	return -EPERM;
-}
-
-/* Get peer position in vector of peers */
-static int8_t get_peer(struct nrf24_mac mac)
-{
-	int8_t i;
-
-	for (i = 0; i < MAX_PEERS; i++)
-		if (peers[i].socket_fd != -1 &&
-			peers[i].addr.address.uint64 == mac.address.uint64)
-			return i;
-
-	return -EINVAL;
-}
-
-/* Get free position in vector for peers */
-static int8_t get_peer_index(void)
-{
-	int8_t i;
-
-	for (i = 0; i < MAX_PEERS; i++)
-		if (peers[i].socket_fd == -1)
-			return i;
-
-	return -EUSERS;
 }
 
 static int unix_connect(void)
@@ -351,7 +286,12 @@ static void kwatch_io_destroy(gpointer user_data)
 	close(p->ksock);
 	p->socket_fd = -1;
 	p->kwatch = 0;
-	count_clients--;
+
+	if (!l_queue_remove(adapter.peer_online_list, p))
+		return;
+
+
+	l_queue_push_head(adapter.peer_offline_list, p);
 }
 
 static gboolean kwatch_io_read(GIOChannel *io, GIOCondition cond,
@@ -394,25 +334,27 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	uint8_t i;
 	int sock, nsk;
 	char mac_str[MAC_ADDRESS_SIZE];
-	struct beacon *peer;
+	struct beacon *beacon;
+	struct peer *peer;
 	struct mgmt_evt_nrf24_bcast_presence *evt_pre =
 			(struct mgmt_evt_nrf24_bcast_presence *) mhdr->payload;
 	ssize_t name_len;
 
 	nrf24_mac2str(&evt_pre->mac, mac_str);
-	peer = g_hash_table_lookup(peer_bcast_table, mac_str);
-	if (peer != NULL) {
-		peer->last_beacon = hal_time_ms();
+	beacon = l_queue_find(adapter.beacon_list, beacon_match, &evt_pre->mac);
+	if (beacon != NULL) {
+		beacon->last_beacon = hal_time_ms();
 		goto done;
 	}
-	peer = g_try_new0(struct beacon, 1);
-	if (peer == NULL)
+	beacon = g_try_new0(struct beacon, 1);
+	if (beacon == NULL)
 		return -ENOMEM;
 	/*
 	 * Print every MAC sending presence in order to ease the discover of
 	 * things trying to connect to the gw.
 	 */
-	peer->last_beacon = hal_time_ms();
+	beacon->addr = evt_pre->mac;
+	beacon->last_beacon = hal_time_ms();
 	/*
 	 * Calculating the size of the name correctly: rbytes contains the
 	 * amount of data received and this contains two structures:
@@ -421,96 +363,85 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	name_len = rbytes - sizeof(*mhdr) - sizeof(*evt_pre);
 
 	/* Creating a UTF-8 copy of the name */
-	peer->name = g_utf8_make_valid((const char *) evt_pre->name, name_len);
-	if (!peer->name)
-		peer->name = g_strdup("unknown");
+	beacon->name = g_utf8_make_valid((const char *) evt_pre->name, name_len);
+	if (!beacon->name)
+		beacon->name = l_strdup("unknown");
 
 	hal_log_info("Thing sending presence. MAC = %s Name = %s",
-						mac_str, peer->name);
+						mac_str, beacon->name);
 	/*
 	 * MAC and device name will be printed only once, but the last presence
 	 * time is updated. Every time a user refresh the list in the webui
 	 * we will discard devices that broadcasted
 	 */
-	g_hash_table_insert(peer_bcast_table, g_strdup(mac_str), peer);
+	l_queue_push_head(adapter.beacon_list, beacon);
 done:
-	/* Check if peer is allowed to connect */
-	if (check_permission(evt_pre->mac) < 0)
+	/* Check if peer belongs to this gateway */
+	peer = l_queue_find(adapter.peer_offline_list,
+			    peer_match, &evt_pre->mac);
+	if (!peer)
 		return -EPERM;
 
-	if (count_clients >= MAX_PEERS)
-		return -EUSERS; /* MAX PEERS */
+	if (l_queue_length(adapter.peer_online_list) == MAX_PEERS)
+		return -EUSERS; /* MAX PEERS: No room for more connection */
 
 	/* Check if this peer is already allocated */
-	position = get_peer(evt_pre->mac);
-	/* If this is a new peer */
-	if (position < 0) {
-		/* Get free peers position */
-		position = get_peer_index();
-		if (position < 0)
-			return position;
-
-		/* Radio socket: nRF24 */
-		nsk = hal_comm_socket(HAL_COMM_PF_NRF24, HAL_COMM_PROTO_RAW);
-		if (nsk < 0) {
-			hal_log_error("hal_comm_socket(nRF24): %s(%d)",
-							strerror(nsk), nsk);
-			return nsk;
-		}
-
-		/* Upper layer socket: knotd */
-		if (inet_address.s_addr)
-			sock = tcp_connect();
-		else
-			sock = unix_connect();
-
-		if (sock < 0) {
-			hal_log_error("connect(): %s(%d)", strerror(sock), sock);
-			hal_comm_close(nsk);
-			return sock;
-		}
-
-		peers[position].ksock = sock;
-		peers[position].socket_fd = nsk;
-
-		/* Set mac value for this position */
-		peers[position].addr.address.uint64 =
-				evt_pre->mac.address.uint64;
-
-		/* Watch knotd socket */
-		io = g_io_channel_unix_new(peers[position].ksock);
-		g_io_channel_set_flags(io, G_IO_FLAG_NONBLOCK, NULL);
-		g_io_channel_set_close_on_unref(io, TRUE);
-		g_io_channel_set_encoding(io, NULL, NULL);
-		g_io_channel_set_buffered(io, FALSE);
-
-		peers[position].kwatch = g_io_add_watch_full(io,
-							G_PRIORITY_DEFAULT,
-							cond,
-							kwatch_io_read,
-							&peers[position],
-							kwatch_io_destroy);
-		g_io_channel_unref(io);
-
-		count_clients++;
-
-		for (i = 0; i < MAX_PEERS; i++) {
-			if (evt_pre->mac.address.uint64 ==
-				adapter.known_peers[i].addr.address.uint64) {
-				adapter.known_peers[i].status = TRUE;
-				break;
-			}
-		}
-		/* Remove device when the connection is established */
-		g_hash_table_remove(peer_bcast_table, mac_str);
+	peer = l_queue_find(adapter.peer_online_list, peer_match, &evt_pre->mac);
+	if (peer) {
+		hal_log_info("Attack: MAC clonning");
+		return -EPERM;
 	}
 
+	/* Radio socket: nRF24 */
+	nsk = hal_comm_socket(HAL_COMM_PF_NRF24, HAL_COMM_PROTO_RAW);
+	if (nsk < 0) {
+		hal_log_error("hal_comm_socket(nRF24): %s(%d)",
+			      strerror(nsk), nsk);
+		return nsk;
+	}
+
+	/* Upper layer socket: knotd */
+	if (inet_address.s_addr)
+		sock = tcp_connect();
+	else
+		sock = unix_connect();
+
+	if (sock < 0) {
+		hal_log_error("connect(): %s(%d)", strerror(sock), sock);
+		hal_comm_close(nsk);
+		return sock;
+	}
+
+	peer = l_new(struct peer, 1);
+	peer->alias = l_strdup(beacon->name);
+	peer->addr = evt_pre->mac;
+	peer->ksock = sock;
+	peer->socket_fd = nsk;
+
+	/* FIXME: Watch knotd socket */
+	io = g_io_channel_unix_new(peer->ksock);
+	g_io_channel_set_flags(io, G_IO_FLAG_NONBLOCK, NULL);
+	g_io_channel_set_close_on_unref(io, TRUE);
+	g_io_channel_set_encoding(io, NULL, NULL);
+	g_io_channel_set_buffered(io, FALSE);
+
+	peer->kwatch = g_io_add_watch_full(io,
+					  G_PRIORITY_DEFAULT,
+					  cond,
+					  kwatch_io_read,
+					  peer,
+					  kwatch_io_destroy);
+	g_io_channel_unref(io);
+
+	/* Remove device when the connection is established */
+	l_queue_remove_if(adapter.beacon_list, beacon_match, &evt_pre->mac);
+
 	/* Send Connect */
-	return hal_comm_connect(peers[position].socket_fd,
+	return hal_comm_connect(peer->socket_fd,
 			&evt_pre->mac.address.uint64);
 }
 
-static int8_t evt_disconnected(struct mgmt_nrf24_header *mhdr)
+static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 {
 	char mac_str[MAC_ADDRESS_SIZE];
 	int8_t position;
@@ -521,45 +452,26 @@ static int8_t evt_disconnected(struct mgmt_nrf24_header *mhdr)
 	nrf24_mac2str(&evt_disc->mac, mac_str);
 	hal_log_info("Peer disconnected(%s)", mac_str);
 
-	if (count_clients == 0)
-		return -EINVAL;
-
-	position = get_peer(evt_disc->mac);
-	if (position < 0)
-		return position;
-
-	g_source_remove(peers[position].kwatch);
-	return 0;
+	l_queue_remove_if(adapter.peer_online_list, peer_match, &evt_disc->mac);
 }
 
-/* Read RAW from Clients */
-static int8_t clients_read(void)
+static void peer_read(void *data, void *user_data)
 {
 	uint8_t buffer[256];
 	int rx, err, i;
-	static struct peer *p = peers;
+	struct peer *p = data;
 
-	if (count_clients == 0)
-		return 0;
+	if (p->socket_fd == -1)
+		return;
 
-	/* Handles clients found at a time */
-	for (i = MAX_PEERS; i != 0; --i) {
-		if (p->socket_fd != -1) {
-			rx = hal_comm_read(p->socket_fd, &buffer, sizeof(buffer));
-			if (rx > 0) {
-				if (write(p->ksock, buffer, rx) < 0) {
-					err = errno;
-					hal_log_error("write to knotd: %s(%d)",
-						      strerror(err), err);
-				}
-			}
-			i = 1; /* LOOP breaking */
+	rx = hal_comm_read(p->socket_fd, &buffer, sizeof(buffer));
+	if (rx > 0) {
+		if (write(p->ksock, buffer, rx) < 0) {
+			err = errno;
+			hal_log_error("write to knotd: %s(%d)",
+				      strerror(err), err);
 		}
-		if (++p == (peers + MAX_PEERS))
-			p = peers;
 	}
-
-	return 0;
 }
 
 static int8_t mgmt_read(void)
@@ -606,7 +518,7 @@ static int8_t mgmt_read(void)
 static gboolean read_idle(gpointer user_data)
 {
 	mgmt_read();
-	clients_read();
+	l_queue_foreach(adapter.peer_online_list, peer_read, NULL);
 
 	return TRUE;
 }
@@ -642,19 +554,9 @@ done:
 	return mgmtfd;
 }
 
-static void close_clients(void)
-{
-	int i;
-
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (peers[i].socket_fd != -1)
-			g_source_remove(peers[i].kwatch);
-	}
-}
-
 static void radio_stop(void)
 {
-	close_clients();
+	/* TODO: disconnect clients */
 	hal_comm_close(mgmtfd);
 	if (mgmtwatch)
 		g_source_remove(mgmtwatch);
@@ -834,6 +736,12 @@ static int parse_nodes(const char *nodes_file)
 	}
 
 	array_len = json_object_array_length(obj_keys);
+	if (array_len > MAX_PEERS) {
+		hal_log_error("Too many nodes at %s. Loading %d of %d",
+			      nodes_file, array_len, MAX_PEERS);
+		array_len = MAX_PEERS;
+	}
+
 	for (i = 0; i < array_len; i++) {
 		obj_nodes = json_object_array_get_idx(obj_keys, i);
 		if (!json_object_object_get_ex(obj_nodes, "mac", &obj_tmp))
@@ -851,34 +759,7 @@ static int parse_nodes(const char *nodes_file)
 		peer->alias = l_strdup(json_object_get_string(obj_tmp));
 		peer->addr = addr;
 
-		l_queue_push_head(adapter.peer_list, peer);
-	}
-	/*
-	 * Gets only up to MAX_PEERS nodes.
-	 */
-	if (array_len > MAX_PEERS) {
-		hal_log_error("Too many nodes at %s", nodes_file);
-		array_len = MAX_PEERS;
-	}
-
-	for (i = 0; i < array_len; i++) {
-		obj_nodes = json_object_array_get_idx(obj_keys, i);
-		if (!json_object_object_get_ex(obj_nodes, "mac", &obj_tmp))
-			goto done;
-
-		/* Parse mac address string into struct nrf24_mac known_peers */
-		if (nrf24_str2mac(json_object_get_string(obj_tmp),
-					&adapter.known_peers[i].addr) < 0)
-			goto done;
-		adapter.known_peers_size++;
-
-		if (!json_object_object_get_ex(obj_nodes, "name", &obj_tmp))
-			goto done;
-
-		/* Set the name of the peer registered */
-		adapter.known_peers[i].alias =
-				g_strdup(json_object_get_string(obj_tmp));
-		adapter.known_peers[i].status = FALSE;
+		l_queue_push_head(adapter.peer_offline_list, peer);
 	}
 
 	err = 0;
@@ -888,25 +769,11 @@ done:
 	return err;
 }
 
-static gboolean check_timeout(gpointer key, gpointer value, gpointer user_data)
+static void beacon_timeout_cb(struct l_timeout *timeout, void *user_data)
 {
-	struct beacon *peer = value;
+	int ms = hal_time_ms();
 
-	/* If it returns true the key/value is removed */
-	if (hal_timeout(hal_time_ms(), peer->last_beacon,
-							BCAST_TIMEOUT) > 0) {
-		hal_log_info("Peer %s timedout.", (char *) key);
-		return TRUE;
-	}
-
-	return FALSE;
-}
-
-static gboolean timeout_iterator(gpointer user_data)
-{
-	g_hash_table_foreach_remove(peer_bcast_table, check_timeout, NULL);
-
-	return TRUE;
+	l_queue_remove_if(adapter.beacon_list, beacon_if_expired, &ms);
 }
 
 int manager_start(const char *file, const char *host, int port,
@@ -934,7 +801,9 @@ int manager_start(const char *file, const char *host, int port,
 	}
 
 	memset(&adapter, 0, sizeof(struct adapter));
-	adapter.peer_list = l_queue_new();
+	adapter.peer_offline_list = l_queue_new();
+	adapter.peer_online_list = l_queue_new();
+	adapter.beacon_list = l_queue_new();
 
 	/* Parse nodes info from nodes_file and writes it to known_peers */
 	err = parse_nodes(nodes_file);
@@ -991,17 +860,16 @@ int manager_start(const char *file, const char *host, int port,
 	if (err < 0)
 		return err;
 
-	peer_bcast_table = g_hash_table_new_full(g_str_hash, g_str_equal,
-							g_free, beacon_free);
-	g_timeout_add_seconds(5, timeout_iterator, NULL);
+	l_timeout_create(5, beacon_timeout_cb, NULL, NULL);
 
 	return 0;
 }
 
 void manager_stop(void)
 {
-	l_queue_destroy(adapter.peer_list, peer_free);
-	dbus_stop();
+	l_free(adapter.keys_pathname);
+	l_queue_destroy(adapter.peer_offline_list, peer_free);
+	l_queue_destroy(adapter.peer_online_list, peer_free);
+	l_queue_destroy(adapter.beacon_list, beacon_free);
 	radio_stop();
-	g_hash_table_destroy(peer_bcast_table);
 }
