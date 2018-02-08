@@ -51,10 +51,12 @@ static struct adapter {
 	/* File with struct keys */
 	gchar *keys_pathname;
 	gboolean powered;
+
+	struct l_queue *peer_list;
+
 	/* Struct with the known peers */
 	struct {
 		struct nrf24_mac addr;
-		guint registration_id;
 		gchar *alias;
 		gboolean status;
 	} known_peers[MAX_PEERS];
@@ -62,7 +64,8 @@ static struct adapter {
 } adapter;
 
 struct peer {
-	uint64_t mac;
+	struct nrf24_mac addr;
+	char *alias;
 	int8_t socket_fd; /* HAL comm socket */
 	int8_t ksock; /* KNoT raw socket: Unix socket or TCP */
 	guint kwatch; /* KNoT raw socket watch */
@@ -90,6 +93,15 @@ static void beacon_free(void *user_data)
 
 	g_free(peer->name);
 	g_free(peer);
+}
+
+static void peer_free(void *data)
+{
+	struct peer *peer = data;
+
+	l_free(peer->alias);
+
+	l_free(peer);
 }
 
 static int write_file(const gchar *addr, const gchar *key, const gchar *name)
@@ -242,7 +254,7 @@ static int8_t get_peer(struct nrf24_mac mac)
 
 	for (i = 0; i < MAX_PEERS; i++)
 		if (peers[i].socket_fd != -1 &&
-			peers[i].mac == mac.address.uint64)
+			peers[i].addr.address.uint64 == mac.address.uint64)
 			return i;
 
 	return -EINVAL;
@@ -462,7 +474,7 @@ done:
 		peers[position].socket_fd = nsk;
 
 		/* Set mac value for this position */
-		peers[position].mac =
+		peers[position].addr.address.uint64 =
 				evt_pre->mac.address.uint64;
 
 		/* Watch knotd socket */
@@ -791,6 +803,8 @@ static int parse_nodes(const char *nodes_file)
 	int err = -EINVAL;
 	json_object *jobj;
 	json_object *obj_keys, *obj_nodes, *obj_tmp;
+	struct peer *peer;
+	struct nrf24_mac addr;
 	FILE *fp;
 
 	/* Load nodes' info from json file */
@@ -819,10 +833,29 @@ static int parse_nodes(const char *nodes_file)
 		goto done;
 	}
 
+	array_len = json_object_array_length(obj_keys);
+	for (i = 0; i < array_len; i++) {
+		obj_nodes = json_object_array_get_idx(obj_keys, i);
+		if (!json_object_object_get_ex(obj_nodes, "mac", &obj_tmp))
+			goto done;
+
+		/* Parse mac address string into struct nrf24_mac known_peers */
+		if (nrf24_str2mac(json_object_get_string(obj_tmp), &addr) < 0)
+			goto done;
+
+		if (!json_object_object_get_ex(obj_nodes, "name", &obj_tmp))
+			goto done;
+
+		/* Set the name of the peer registered */
+		peer = l_new(struct peer, 1);
+		peer->alias = l_strdup(json_object_get_string(obj_tmp));
+		peer->addr = addr;
+
+		l_queue_push_head(adapter.peer_list, peer);
+	}
 	/*
 	 * Gets only up to MAX_PEERS nodes.
 	 */
-	array_len = json_object_array_length(obj_keys);
 	if (array_len > MAX_PEERS) {
 		hal_log_error("Too many nodes at %s", nodes_file);
 		array_len = MAX_PEERS;
@@ -901,6 +934,8 @@ int manager_start(const char *file, const char *host, int port,
 	}
 
 	memset(&adapter, 0, sizeof(struct adapter));
+	adapter.peer_list = l_queue_new();
+
 	/* Parse nodes info from nodes_file and writes it to known_peers */
 	err = parse_nodes(nodes_file);
 	if (err < 0) {
@@ -965,6 +1000,7 @@ int manager_start(const char *file, const char *host, int port,
 
 void manager_stop(void)
 {
+	l_queue_destroy(adapter.peer_list, peer_free);
 	dbus_stop();
 	radio_stop();
 	g_hash_table_destroy(peer_bcast_table);
