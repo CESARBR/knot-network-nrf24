@@ -47,8 +47,9 @@ struct l_dbus *g_dbus = NULL;
 
 static struct adapter {
 	struct nrf24_mac mac;
+
 	/* File with struct keys */
-	gchar *file_name;
+	gchar *keys_pathname;
 	gboolean powered;
 	/* Struct with the known peers */
 	struct {
@@ -100,7 +101,7 @@ static int write_file(const gchar *addr, const gchar *key, const gchar *name)
 	json_object *obj_keys, *obj_array, *obj_tmp, *obj_mac;
 
 	/* Load nodes' info from json file */
-	jobj = json_object_from_file(adapter.file_name);
+	jobj = json_object_from_file(adapter.keys_pathname);
 	if (!jobj)
 		return -EINVAL;
 
@@ -129,7 +130,7 @@ static int write_file(const gchar *addr, const gchar *key, const gchar *name)
 						json_object_get(obj_tmp));
 		}
 		json_object_object_add(jobj2, "keys", obj_array);
-		json_object_to_file(adapter.file_name, jobj2);
+		json_object_to_file(adapter.keys_pathname, jobj2);
 		json_object_put(jobj2);
 	} else if (name == NULL) {
 	/* TODO update key of some mac (depends on adding keys to file) */
@@ -140,7 +141,7 @@ static int write_file(const gchar *addr, const gchar *key, const gchar *name)
 		json_object_object_add(obj_tmp, "mac",
 						json_object_new_string(addr));
 		json_object_array_add(obj_keys, obj_tmp);
-		json_object_to_file(adapter.file_name, jobj);
+		json_object_to_file(adapter.keys_pathname, jobj);
 	}
 
 	err = 0;
@@ -217,7 +218,7 @@ static void dbus_stop(void)
 			g_free(adapter.known_peers[i].alias);
 	}
 
-	g_free(adapter.file_name);
+	g_free(adapter.keys_pathname);
 }
 
 /* Check if peer is on list of known peers */
@@ -912,7 +913,7 @@ int manager_start(const char *file, const char *host, int port,
 		err = gen_save_mac(json_str, file, &mac);
 
 	free(json_str);
-	adapter.file_name = g_strdup(nodes_file);
+	adapter.keys_pathname = g_strdup(nodes_file);
 	adapter.mac = mac;
 	adapter.powered = TRUE;
 
