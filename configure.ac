@@ -26,16 +26,6 @@ AC_PROG_LN_S
 LT_PREREQ(2.2)
 LT_INIT([disable-static])
 
-PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.52, dummy=no,
-				AC_MSG_ERROR(required glib >= 2.52))
-AC_SUBST(GLIB_CFLAGS)
-AC_SUBST(GLIB_LIBS)
-
-PKG_CHECK_MODULES(GIO_UNIX, gio-2.0 >= 2.48)
-AC_SUBST(GIO_UNIX_CFLAGS)
-AC_SUBST(GIO_UNIX_LIBS)
-
-
 PKG_CHECK_MODULES(JSON, json-c,
   [AC_DEFINE([HAVE_JSON],[1],[Use JSON])],
   [AC_MSG_ERROR("json-c missing")])

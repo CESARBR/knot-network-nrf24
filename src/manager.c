@@ -28,9 +28,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <glib.h>
 #include <ell/ell.h>
-#include <gio/gio.h>
 #include <json-c/json.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -50,8 +48,8 @@
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
 #endif
 
+static struct l_idle *idle;
 static int mgmtfd;
-static guint mgmtwatch;
 static struct in_addr inet_address;
 static int tcp_port;
 
@@ -61,8 +59,8 @@ static struct adapter {
 	struct nrf24_mac mac;
 
 	/* File with struct keys */
-	gchar *keys_pathname;
-	gboolean powered;
+	char *keys_pathname;
+	bool powered;
 
 	struct l_queue *peer_offline_list; /* Disconnected */
 	struct l_queue *peer_online_list; /* Connected */
@@ -74,7 +72,6 @@ struct peer {
 	char *alias;
 	int8_t socket_fd; /* HAL comm socket */
 	int8_t ksock; /* KNoT raw socket: Unix socket or TCP */
-	guint kwatch; /* KNoT raw socket watch */
 };
 
 struct beacon {
@@ -87,8 +84,8 @@ static void beacon_free(void *user_data)
 {
 	struct beacon *peer = user_data;
 
-	g_free(peer->name);
-	g_free(peer);
+	l_free(peer->name);
+	l_free(peer);
 }
 
 static void peer_free(void *data)
@@ -130,7 +127,7 @@ static bool peer_match(const void *a, const void *b)
 	return (ret ? false : true);
 }
 
-static int write_file(const gchar *addr, const gchar *key, const gchar *name)
+static int write_file(const char *addr, const char *key, const char *name)
 {
 	int array_len;
 	int i;
@@ -162,8 +159,7 @@ static int write_file(const gchar *addr, const gchar *key, const gchar *name)
 				goto failure;
 
 		/* Parse mac address string into struct nrf24_mac known_peers */
-			if (g_strcmp0(json_object_get_string(obj_mac), addr)
-									!= 0)
+			if (strcmp(json_object_get_string(obj_mac), addr) != 0)
 				json_object_array_add(obj_array,
 						json_object_get(obj_tmp));
 		}
@@ -290,14 +286,13 @@ static int tcp_connect(void)
 	return sock;
 }
 
-static void kwatch_io_destroy(gpointer user_data)
+static void kwatch_io_destroy(void *user_data)
 {
 	struct peer *p = (struct peer *) user_data;
 
 	hal_comm_close(p->socket_fd);
 	close(p->ksock);
 	p->socket_fd = -1;
-	p->kwatch = 0;
 
 	if (!l_queue_remove(adapter.peer_online_list, p))
 		return;
@@ -306,26 +301,21 @@ static void kwatch_io_destroy(gpointer user_data)
 	l_queue_push_head(adapter.peer_offline_list, p);
 }
 
-static gboolean kwatch_io_read(GIOChannel *io, GIOCondition cond,
-							gpointer user_data)
+static bool kwatch_io_read(struct l_io *io, void *user_data)
 {
 	struct peer *p = (struct peer *) user_data;
-	GError *gerr = NULL;
-	GIOStatus status;
 	char buffer[128];
-	size_t rx;
+	ssize_t rx;
 	ssize_t tx;
-
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
-		return FALSE;
+	int err, sock;
 
 	/* Reading data from knotd */
-	status = g_io_channel_read_chars(io, buffer, sizeof(buffer),
-								&rx, &gerr);
-	if (status != G_IO_STATUS_NORMAL) {
-		hal_log_error("glib read(): %s", gerr->message);
-		g_error_free(gerr);
-		return FALSE;
+	sock = l_io_get_fd(io);
+	rx = read(sock, buffer, sizeof(buffer));
+	if (rx < 0) {
+		err = errno;
+		hal_log_error("read(): %s (%d)", strerror(err), err);
+		return true;
 	}
 
 	/* Send data to thing */
@@ -335,17 +325,17 @@ static gboolean kwatch_io_read(GIOChannel *io, GIOCondition cond,
 	if (tx < 0)
 		hal_log_error("hal_comm_write(): %zd", tx);
 
-	return TRUE;
+	return true;
 }
 
 static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 {
-	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
-	GIOChannel *io;
+	struct l_io *io;
 	int8_t position;
 	uint8_t i;
 	int sock, nsk;
 	char mac_str[MAC_ADDRESS_SIZE];
+	const char *end;
 	struct beacon *beacon;
 	struct peer *peer;
 	struct mgmt_evt_nrf24_bcast_presence *evt_pre =
@@ -358,15 +348,7 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 		beacon->last_beacon = hal_time_ms();
 		goto done;
 	}
-	beacon = g_try_new0(struct beacon, 1);
-	if (beacon == NULL)
-		return -ENOMEM;
-	/*
-	 * Print every MAC sending presence in order to ease the discover of
-	 * things trying to connect to the gw.
-	 */
-	beacon->addr = evt_pre->mac;
-	beacon->last_beacon = hal_time_ms();
+
 	/*
 	 * Calculating the size of the name correctly: rbytes contains the
 	 * amount of data received and this contains two structures:
@@ -375,7 +357,14 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	name_len = rbytes - sizeof(*mhdr) - sizeof(*evt_pre);
 
 	/* Creating a UTF-8 copy of the name */
-	beacon->name = g_utf8_make_valid((const char *) evt_pre->name, name_len);
+	if (l_utf8_validate(evt_pre->name, name_len, &end) == false)
+		goto done;
+
+	beacon = l_new(struct beacon, 1);
+	beacon->addr = evt_pre->mac;
+	beacon->last_beacon = hal_time_ms();
+	beacon->name = l_strndup(evt_pre->name, name_len);
+
 	if (!beacon->name)
 		beacon->name = l_strdup("unknown");
 
@@ -431,19 +420,9 @@ done:
 	peer->socket_fd = nsk;
 
 	/* FIXME: Watch knotd socket */
-	io = g_io_channel_unix_new(peer->ksock);
-	g_io_channel_set_flags(io, G_IO_FLAG_NONBLOCK, NULL);
-	g_io_channel_set_close_on_unref(io, TRUE);
-	g_io_channel_set_encoding(io, NULL, NULL);
-	g_io_channel_set_buffered(io, FALSE);
-
-	peer->kwatch = g_io_add_watch_full(io,
-					  G_PRIORITY_DEFAULT,
-					  cond,
-					  kwatch_io_read,
-					  peer,
-					  kwatch_io_destroy);
-	g_io_channel_unref(io);
+	io = l_io_new(peer->ksock);
+	l_io_set_close_on_destroy(io, true);
+	l_io_set_read_handler(io, kwatch_io_read, peer, kwatch_io_destroy);
 
 	/* Remove device when the connection is established */
 	l_queue_remove_if(adapter.beacon_list, beacon_match, &evt_pre->mac);
@@ -527,12 +506,10 @@ static int8_t mgmt_read(void)
 	return 0;
 }
 
-static gboolean read_idle(gpointer user_data)
+static void read_idle(struct l_idle *idle, void *user_data)
 {
 	mgmt_read();
 	l_queue_foreach(adapter.peer_online_list, peer_read, NULL);
-
-	return TRUE;
 }
 
 static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
@@ -556,7 +533,7 @@ static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 		goto done;
 	}
 
-	mgmtwatch = g_idle_add(read_idle, NULL);
+	idle = l_idle_create(read_idle, NULL, NULL);
 	hal_log_info("Radio initialized");
 
 	return 0;
@@ -570,8 +547,9 @@ static void radio_stop(void)
 {
 	/* TODO: disconnect clients */
 	hal_comm_close(mgmtfd);
-	if (mgmtwatch)
-		g_source_remove(mgmtwatch);
+	if (idle)
+		l_idle_remove(idle);
+
 	hal_comm_deinit();
 }
 
@@ -829,9 +807,9 @@ int manager_start(const char *file, const char *host, int port,
 		err = gen_save_mac(json_str, file, &mac);
 
 	free(json_str);
-	adapter.keys_pathname = g_strdup(nodes_file);
+	adapter.keys_pathname = l_strdup(nodes_file);
 	adapter.mac = mac;
-	adapter.powered = TRUE;
+	adapter.powered = true;
 
 	if (err < 0) {
 		hal_log_error("Invalid configuration file(%d): %s", err, file);

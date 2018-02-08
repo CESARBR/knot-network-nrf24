@@ -62,11 +62,11 @@ src_nrfd_SOURCES = src/main.c \
 		   src/settings.h src/settings.c \
 		   src/manager.h src/manager.c
 
-src_nrfd_LDADD = @GLIB_LIBS@ @GIO_UNIX_LIBS@ @JSON_LIBS@ \
+src_nrfd_LDADD = @JSON_LIBS@ \
 		ell/libell-internal.la -lm
 
 src_nrfd_LDFLAGS = $(AM_LDFLAGS)
-src_nrfd_CFLAGS = $(AM_CFLAGS) @GLIB_CFLAGS@ @GIO_UNIX_CFLAGS@ @JSON_CFLAGS@
+src_nrfd_CFLAGS = $(AM_CFLAGS) @JSON_CFLAGS@
 
 BUILT_SOURCES = ell/internal
 
