@@ -38,6 +38,8 @@
 
 #define CHANNEL_DEFAULT NRF24_CH_MIN
 
+static struct l_timeout *quit_to = NULL;
+
 static void main_loop_quit(struct l_timeout *timeout, void *user_data)
 {
 	l_main_quit();
@@ -52,7 +54,7 @@ static void terminate(void)
 
 	terminating = true;
 
-	l_timeout_create(1, main_loop_quit, NULL, NULL);
+	quit_to = l_timeout_create(1, main_loop_quit, NULL, NULL);
 }
 
 static void signal_handler(struct l_signal *signal, uint32_t signo,
@@ -123,6 +125,9 @@ int main(int argc, char *argv[])
 	l_main_run();
 
 	l_signal_remove(sig);
+	if (quit_to)
+		l_timeout_remove(quit_to);
+
 	l_main_exit();
 
 fail_detach:
