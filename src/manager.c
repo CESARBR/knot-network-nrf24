@@ -48,6 +48,7 @@
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
 #endif
 
+static struct l_timeout *beacon_to;
 static struct l_idle *idle;
 static int mgmtfd;
 static struct in_addr inet_address;
@@ -850,13 +851,14 @@ int manager_start(const char *file, const char *host, int port,
 	if (err < 0)
 		return err;
 
-	l_timeout_create(5, beacon_timeout_cb, NULL, NULL);
+	beacon_to = l_timeout_create(5, beacon_timeout_cb, NULL, NULL);
 
 	return 0;
 }
 
 void manager_stop(void)
 {
+	l_timeout_remove(beacon_to);
 	l_free(adapter.keys_pathname);
 	l_queue_destroy(adapter.peer_offline_list, peer_free);
 	l_queue_destroy(adapter.peer_online_list, peer_free);
