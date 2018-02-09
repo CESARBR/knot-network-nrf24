@@ -44,6 +44,7 @@
 #define MAC_ADDRESS_SIZE		24
 #define BCAST_TIMEOUT			10000
 
+#define NF24_SERVICE			"org.cesar.knot.nrf"
 #define ADAPTER_INTERFACE		"org.cesar.nrf.Adapter1"
 #define DEVICE_INTERFACE		"org.cesar.nrf.Device1"
 
@@ -131,6 +132,13 @@ static bool peer_match(const void *a, const void *b)
 	return (ret ? false : true);
 }
 
+static struct l_dbus_message *dbus_error_invalid_args(
+						struct l_dbus_message *msg)
+{
+	return l_dbus_message_new_error(msg, NF24_SERVICE ".InvalidArgs",
+					"Argument type is wrong");
+}
+
 static int write_file(const char *addr, const char *key, const char *name)
 {
 	int array_len;
@@ -188,7 +196,22 @@ failure:
 	return err;
 }
 
-static bool property_get_powered(struct l_dbus *dbus,
+static struct l_dbus_message *adapter_remove_device(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct adapter *adapter = user_data;
+	const char *path;
+
+	if (!l_dbus_message_get_arguments(msg, "o", &path))
+		return dbus_error_invalid_args(msg);
+
+	/* TODO: unregister object & remove from keys.json */
+
+	return l_dbus_message_new_method_return(msg);
+}
+
+static bool adapter_property_get_powered(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
@@ -201,7 +224,7 @@ static bool property_get_powered(struct l_dbus *dbus,
 	return true;
 }
 
-static bool property_get_address(struct l_dbus *dbus,
+static bool adapter_property_get_address(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
@@ -217,15 +240,19 @@ static bool property_get_address(struct l_dbus *dbus,
 	return true;
 }
 
-static void adapter_register_property(struct l_dbus_interface *interface)
+static void adapter_setup_interface(struct l_dbus_interface *interface)
 {
+
+	l_dbus_interface_method(interface, "RemoveDevice", 0,
+				adapter_remove_device, "", "o", "path");
+
 	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
-				       property_get_powered,
+				       adapter_property_get_powered,
 				       NULL))
 		hal_log_error("Can't add 'Powered' property");
 
 	if (!l_dbus_interface_property(interface, "Address", 0, "s",
-				       property_get_address,
+				       adapter_property_get_address,
 				       NULL))
 		hal_log_error("Can't add 'Address' property");
 }
@@ -305,7 +332,7 @@ static bool device_property_get_paired(struct l_dbus *dbus,
 	return true;
 }
 
-static void device_register_property(struct l_dbus_interface *interface)
+static void device_setup_interface(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       device_property_get_name,
@@ -381,7 +408,7 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 	/* nRF24 Adapter object */
 	if (!l_dbus_register_interface(g_dbus,
 				       ADAPTER_INTERFACE,
-				       adapter_register_property,
+				       adapter_setup_interface,
 				       NULL, false))
 		hal_log_error("dbus: unable to register %s", ADAPTER_INTERFACE);
 
@@ -398,10 +425,11 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 					 &adapter))
 	    hal_log_error("dbus: unable to add %s to %s",
 					L_DBUS_INTERFACE_PROPERTIES, path);
+
 	/* nRF24 Device (peer) object */
 	if (!l_dbus_register_interface(g_dbus,
 				       DEVICE_INTERFACE,
-				       device_register_property,
+				       device_setup_interface,
 				       NULL, false))
 		hal_log_error("dbus: unable to register %s", DEVICE_INTERFACE);
 
@@ -411,7 +439,7 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 
 static void dbus_ready_callback(void *user_data)
 {
-	l_dbus_name_acquire(g_dbus, "org.cesar.knot.nrf", false, false, true,
+	l_dbus_name_acquire(g_dbus, NF24_SERVICE, false, false, true,
 			    dbus_request_name_callback, NULL);
 
 	if (!l_dbus_object_manager_enable(g_dbus))
