@@ -19,7 +19,13 @@
  *
  */
 
-int manager_start(const char *file, const char *host, int port,
-			const char *spi, int channel, int dbm,
-			const char *nodes_file);
-void manager_stop(void);
+#define NF24_SERVICE			"org.cesar.knot.nrf"
+#define ADAPTER_INTERFACE		"org.cesar.nrf.Adapter1"
+#define DEVICE_INTERFACE		"org.cesar.nrf.Device1"
+
+int dbus_start(void);
+void dbus_stop(void);
+
+struct l_dbus *dbus_get_bus(void);
+
+struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg);

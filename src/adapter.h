@@ -19,7 +19,9 @@
  *
  */
 
-int manager_start(const char *file, const char *host, int port,
-			const char *spi, int channel, int dbm,
-			const char *nodes_file);
-void manager_stop(void);
+struct nrf24_adapter;
+
+int adapter_start(const char *host, const char *keys_pathname,
+		  uint8_t channel, int port,
+		  const struct nrf24_mac *mac);
+void adapter_stop(void);

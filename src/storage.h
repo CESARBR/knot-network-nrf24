@@ -19,7 +19,15 @@
  *
  */
 
-int manager_start(const char *file, const char *host, int port,
-			const char *spi, int channel, int dbm,
-			const char *nodes_file);
-void manager_stop(void);
+typedef void (*storage_foreach_func_t) (const char *mac, const char *name,
+					void *user_data);
+
+void storage_foreach(const char *nodes_file,
+				storage_foreach_func_t func, void *user_data);
+int storage_write(const char *pathname, const char *addr,
+		       const char *key, const char *name);
+
+int storage_config_load(const char *pathname, int *channel,
+			int *dbm, char *mac);
+int storage_config_write_keyword(const char *pathname, const char *group,
+				 const char *key, const char *value);

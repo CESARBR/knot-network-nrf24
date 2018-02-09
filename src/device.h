@@ -18,8 +18,16 @@
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+struct nrf24_device;
 
-int manager_start(const char *file, const char *host, int port,
-			const char *spi, int channel, int dbm,
-			const char *nodes_file);
-void manager_stop(void);
+int device_start(void);
+void device_stop(void);
+
+void device_get_address(const struct nrf24_device *device,
+			struct nrf24_mac *addr);
+
+struct nrf24_device *device_create(const char *adapter_path,
+				   const struct nrf24_mac *addr,
+				   const char *name, bool paired);
+void device_destroy(struct nrf24_device *device);
+

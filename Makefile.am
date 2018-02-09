@@ -60,7 +60,11 @@ ell_libell_internal_la_SOURCES = $(ell_sources)
 
 src_nrfd_SOURCES = src/main.c \
 		   src/settings.h src/settings.c \
-		   src/manager.h src/manager.c
+		   src/manager.h src/manager.c \
+		   src/adapter.h src/adapter.c \
+		   src/device.h src/device.c \
+		   src/storage.h src/storage.c \
+		   src/dbus.h src/dbus.c
 
 src_nrfd_LDADD = @JSON_LIBS@ \
 		ell/libell-internal.la -lm
@@ -94,3 +98,4 @@ maintainer-clean-local:
 	$(RM) -rf ell
 
 clean-local:
+	$(RM) src/nrfd
