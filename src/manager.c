@@ -279,6 +279,32 @@ static bool device_property_get_connected(struct l_dbus *dbus,
 	return true;
 }
 
+static bool device_property_get_paired(struct l_dbus *dbus,
+				     struct l_dbus_message *msg,
+				     struct l_dbus_message_builder *builder,
+				     void *user_data)
+{
+	struct peer *peer = user_data;
+	struct peer *online;
+	struct peer *offline;
+	bool paired = false;
+
+	online = l_queue_find(adapter.peer_online_list,
+			      peer_match, &peer->addr);
+
+	if (!online) {
+		offline = l_queue_find(adapter.peer_offline_list,
+				       peer_match, &peer->addr);
+		if (offline)
+			paired = true;
+	}
+
+	l_dbus_message_builder_append_basic(builder, 'b', &paired);
+	l_info("GetProperty(Paired = %d)", paired);
+
+	return true;
+}
+
 static void device_register_property(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
@@ -295,6 +321,11 @@ static void device_register_property(struct l_dbus_interface *interface)
 				       device_property_get_connected,
 				       NULL))
 		hal_log_error("Can't add 'Connected' property");
+
+	if (!l_dbus_interface_property(interface, "Paired", 0, "b",
+				       device_property_get_paired,
+				       NULL))
+		hal_log_error("Can't add 'Paired' property");
 }
 
 static void device_add_interface(void *data, void *user_data)

@@ -86,6 +86,10 @@ Properties 	string Address [readonly]
 		PropertiesChanged signal is emitted when this value
 		changes.
 
+		boolean Paired [readonly]
+
+		Indicates if the remote is paired.
+
 
 		object Adapter [readonly]
 
