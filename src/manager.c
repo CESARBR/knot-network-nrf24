@@ -45,6 +45,7 @@
 #define BCAST_TIMEOUT			10000
 
 #define ADAPTER_INTERFACE		"org.cesar.nrf.Adapter1"
+#define DEVICE_INTERFACE		"org.cesar.nrf.Device1"
 
 #ifndef MIN
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
@@ -216,7 +217,7 @@ static bool property_get_address(struct l_dbus *dbus,
 	return true;
 }
 
-static void register_property(struct l_dbus_interface *interface)
+static void adapter_register_property(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
 				       property_get_powered,
@@ -227,6 +228,109 @@ static void register_property(struct l_dbus_interface *interface)
 				       property_get_address,
 				       NULL))
 		hal_log_error("Can't add 'Address' property");
+}
+
+static bool device_property_get_name(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct peer *peer= user_data;
+
+	l_dbus_message_builder_append_basic(builder, 's', peer->alias);
+	l_info("GetProperty(Name = %s)", peer->alias);
+
+	return true;
+}
+
+static bool device_property_get_address(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct peer *peer= user_data;
+	char str[MAC_ADDRESS_SIZE];
+
+	nrf24_mac2str(&peer->addr, str);
+
+	l_dbus_message_builder_append_basic(builder, 's', str);
+	l_info("GetProperty(Address = %s)", str);
+
+	return true;
+}
+
+static bool device_property_get_connected(struct l_dbus *dbus,
+				     struct l_dbus_message *msg,
+				     struct l_dbus_message_builder *builder,
+				     void *user_data)
+{
+	struct peer *peer = user_data;
+	struct peer *online;
+	bool connected;
+
+	online = l_queue_find(adapter.peer_online_list,
+			      peer_match, &peer->addr);
+
+	connected = (online ? true : false);
+
+	l_dbus_message_builder_append_basic(builder, 'b', &connected);
+	l_info("GetProperty(Powered = %d)", connected);
+
+	return true;
+}
+
+static void device_register_property(struct l_dbus_interface *interface)
+{
+	if (!l_dbus_interface_property(interface, "Name", 0, "s",
+				       device_property_get_name,
+				       NULL))
+		hal_log_error("Can't add 'Name' property");
+
+	if (!l_dbus_interface_property(interface, "Address", 0, "s",
+				       device_property_get_address,
+				       NULL))
+		hal_log_error("Can't add 'Address' property");
+
+	if (!l_dbus_interface_property(interface, "Connected", 0, "b",
+				       device_property_get_connected,
+				       NULL))
+		hal_log_error("Can't add 'Connected' property");
+}
+
+static void device_add_interface(void *data, void *user_data)
+{
+	struct peer *peer = data;
+	const char *adapter_path = user_data;
+	char device_path[MAC_ADDRESS_SIZE + strlen(adapter_path) + 1];
+	char mac_str[MAC_ADDRESS_SIZE];
+	int i, len;
+
+	memset(mac_str, 0, sizeof(mac_str));
+
+	strcpy(device_path, adapter_path);
+	len = snprintf(device_path, sizeof(device_path), "%s/", adapter_path);
+
+	nrf24_mac2str(&peer->addr, &device_path[len]);
+
+	/* Replace ':' by '_' */
+	for (i = len; i < (len + MAC_ADDRESS_SIZE); i++) {
+		if (device_path[i] == ':')
+			device_path[i] = '_';
+	}
+
+	if (!l_dbus_object_add_interface(g_dbus,
+					 device_path,
+					 DEVICE_INTERFACE,
+					 peer))
+	    hal_log_error("dbus: unable to add %s to %s",
+			  DEVICE_INTERFACE, device_path);
+
+	if (!l_dbus_object_add_interface(g_dbus,
+					 device_path,
+					 L_DBUS_INTERFACE_PROPERTIES,
+					 peer))
+	    hal_log_error("dbus: unable to add %s to %s",
+			  L_DBUS_INTERFACE_PROPERTIES, device_path);
 }
 
 static void dbus_disconnect_callback(void *user_data)
@@ -243,9 +347,10 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 		return;
 	}
 
+	/* nRF24 Adapter object */
 	if (!l_dbus_register_interface(g_dbus,
 				       ADAPTER_INTERFACE,
-				       register_property,
+				       adapter_register_property,
 				       NULL, false))
 		hal_log_error("dbus: unable to register %s", ADAPTER_INTERFACE);
 
@@ -262,6 +367,15 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 					 &adapter))
 	    hal_log_error("dbus: unable to add %s to %s",
 					L_DBUS_INTERFACE_PROPERTIES, path);
+	/* nRF24 Device (peer) object */
+	if (!l_dbus_register_interface(g_dbus,
+				       DEVICE_INTERFACE,
+				       device_register_property,
+				       NULL, false))
+		hal_log_error("dbus: unable to register %s", DEVICE_INTERFACE);
+
+	l_queue_foreach(adapter.peer_offline_list,
+			device_add_interface, (void *) path);
 }
 
 static void dbus_ready_callback(void *user_data)
