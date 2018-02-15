@@ -55,6 +55,7 @@ struct nrf24_adapter {
 	bool powered;
 
 	struct l_hashmap *offline_list;	/* Disconnected devices */
+	struct l_hashmap *paging_list;	/* Paging/connecting devices */
 	struct l_hashmap *online_list;	/* Connected devices */
 	struct l_hashmap *beacon_list;	/* Detected devices */
 	struct l_queue *idle_list;	/* Connection mapping */
@@ -277,7 +278,9 @@ static void radio_idle_destroy(void *user_data)
 static void radio_idle_read(struct l_idle *idle, void *user_data)
 {
 	const struct idle_pipe *pipe = user_data;
+	struct nrf24_device *device;
 	uint8_t buffer[256];
+	char mac_str[24];
 	int rx, err;
 
 	rx = hal_comm_read(pipe->rxsock, &buffer, sizeof(buffer));
@@ -287,6 +290,19 @@ static void radio_idle_read(struct l_idle *idle, void *user_data)
 			hal_log_error("write to knotd: %s(%d)",
 				      strerror(err), err);
 		}
+		/*
+		 * FIXME: MGMT should be extended to notify connection
+		 * complete event for host initiated connection.
+		 */
+
+		device = l_hashmap_remove(adapter.paging_list, &pipe->addr);
+		if (!device)
+			return;
+
+		l_hashmap_insert(adapter.online_list,
+				 L_INT_TO_PTR(pipe->rxsock), device);
+		nrf24_mac2str(&pipe->addr, mac_str);
+		hal_log_info("%p %s connection complete", device, mac_str);
 	}
 }
 
@@ -320,7 +336,7 @@ static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 {
 	struct l_io *io;
-	int sock, nsk;
+	int sock, nsk, ret;
 	char mac_str[24];
 	const char *end;
 	struct beacon *beacon;
@@ -367,15 +383,33 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	l_hashmap_insert(adapter.beacon_list, &beacon->addr, beacon);
 done:
 
-	/* Check if device belongs to this gateway */
-	device = l_hashmap_lookup(adapter.offline_list, &evt_pre->mac);
-	if (!device)
-		return -EPERM;
-
+	/*
+	 * Paired device: Read from storage, connect automatically.
+	 * Unknown device: Register/Create the device and wait the user
+	 * to trigger 'Pair' method.
+	 */
 	if (l_hashmap_size(adapter.online_list) == MAX_PEERS)
 		return -EUSERS; /* MAX PEERS: No room for more connection */
 
-	/* FIXME: connected already? */
+	/* Connection in progress? */
+	device = l_hashmap_lookup(adapter.paging_list, &evt_pre->mac);
+	if (device) {
+		hal_log_info("Connection in progress ...");
+		return 0;
+	}
+
+	/* Register not paired/unknown devices */
+	device = l_hashmap_lookup(adapter.offline_list, &evt_pre->mac);
+	if (!device) {
+		device = device_create(adapter.path, &evt_pre->mac,
+				       beacon->name, false);
+		l_hashmap_insert(adapter.offline_list, &evt_pre->mac, device);
+		return 0;
+	}
+
+	/* Paired/Known device? */
+	if (!device_is_paired(device))
+		return 0;
 
 	/* Radio socket: nRF24 */
 	nsk = hal_comm_socket(HAL_COMM_PF_NRF24, HAL_COMM_PROTO_RAW);
@@ -397,13 +431,6 @@ done:
 		return sock;
 	}
 
-	device = device_create(adapter.path, &evt_pre->mac,
-			       beacon->name, false);
-	if (!device) {
-		hal_log_error("device: create error!");
-		return -EPERM;
-	}
-
 	/* Monitor traffic from knotd */
 	io = l_io_new(sock);
 	l_io_set_close_on_destroy(io, true);
@@ -418,11 +445,13 @@ done:
 				   radio_idle_destroy);
 	l_queue_push_head(adapter.idle_list, pipe);
 
-	/* Tracking online & offline */
-	l_hashmap_insert(adapter.online_list, L_INT_TO_PTR(nsk), device);
-
 	/* Send Connect */
-	return hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
+	hal_log_info("Conneting to %p %s", device, mac_str);
+	ret = hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
+	if (ret == 0)
+		l_hashmap_insert(adapter.paging_list, &evt_pre->mac, device);
+
+	return ret;
 }
 
 static void mgmt_idle_read(struct l_idle *idle, void *user_data)
@@ -608,6 +637,7 @@ int adapter_start(const char *host, const char *keys_pathname,
 
 	memset(&adapter, 0, sizeof(struct nrf24_adapter));
 	adapter.offline_list = l_hashmap_new();
+	adapter.paging_list = l_hashmap_new();
 	adapter.online_list = l_hashmap_new();
 	adapter.beacon_list = l_hashmap_new();
 
@@ -669,6 +699,8 @@ void adapter_stop(void)
 	l_queue_destroy(adapter.idle_list, pipe_destroy);
 
 	l_hashmap_destroy(adapter.offline_list,
+			(l_hashmap_destroy_func_t ) device_destroy);
+	l_hashmap_destroy(adapter.paging_list,
 			(l_hashmap_destroy_func_t ) device_destroy);
 	l_hashmap_destroy(adapter.online_list,
 			(l_hashmap_destroy_func_t ) device_destroy);

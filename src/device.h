@@ -25,7 +25,7 @@ void device_stop(void);
 
 void device_get_address(const struct nrf24_device *device,
 			struct nrf24_mac *addr);
-
+bool device_is_paired(const struct nrf24_device *device);
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
 				   const char *name, bool paired);
