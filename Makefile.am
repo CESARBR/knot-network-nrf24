@@ -3,6 +3,9 @@ AM_MAKEFLAGS = --no-print-directory
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS)
 AM_LDFLAGS = $(BUILD_LDFLAGS)
 
+dbusdir = @DBUS_CONFDIR@/dbus-1/system.d
+dbus_DATA = src/nrf24.conf
+
 bin_PROGRAMS = src/nrfd
 noinst_PROGRAMS =
 
@@ -87,6 +90,8 @@ ell/internal: Makefile
 			$(LN_S) -t linux -f $(abs_srcdir)/../ell.git/$$f ; \
 		fi \
 	done > $@
+
+EXTRA_DIST = src/nrf24.conf
 
 DISTCLEANFILES =
 
