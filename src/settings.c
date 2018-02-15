@@ -72,7 +72,6 @@ static const struct option main_options[] = {
 
 static int parse_args(int argc, char *argv[], struct settings *settings)
 {
-	int ret = EXIT_FAILURE;
 	int opt;
 
 	for (;;) {
