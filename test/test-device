@@ -1,0 +1,36 @@
+#!/usr/bin/python
+from optparse import OptionParser, make_option
+import sys
+import dbus
+
+bus = dbus.SystemBus()
+
+option_list = [ make_option("-p", "--path", action="store", type="string", dest="path"), ]
+parser = OptionParser(option_list=option_list)
+
+(options, args) = parser.parse_args()
+
+if (len(args) < 1):
+        print("Usage: %s <command>" % (sys.argv[0]))
+        print("")
+        print("  info")
+        print("  powered [on/off]")
+        sys.exit(1)
+
+cmd = args[0]
+if not options.path:
+	print("Mandatory argument 'path' missing")
+	sys.exit(0)
+
+path = options.path
+props = dbus.Interface(bus.get_object("br.org.cesar.knot.nrf", path), "org.freedesktop.DBus.Properties")
+device = dbus.Interface(bus.get_object("br.org.cesar.knot.nrf", path), "br.org.cesar.nrf.Device1")
+
+if (cmd == "info"):
+	print (props.GetAll("br.org.cesar.nrf.Device1"))
+	sys.exit(0)
+
+if (cmd == "pair"):
+	print ("Pairing ...")
+	device.Pair("")
+	sys.exit(0)
