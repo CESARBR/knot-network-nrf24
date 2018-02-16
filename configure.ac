@@ -33,6 +33,12 @@ PKG_CHECK_MODULES(JSON, json-c,
 AC_SUBST(JSON_CFLAGS)
 AC_SUBST(JSON_LIBS)
 
+PKG_CHECK_MODULES(ELL, ell,
+  [AC_DEFINE([HAVE_ELL],[1],[Use ELL])],
+  [AC_MSG_ERROR("ell missing")])
+AC_SUBST(ELL_CFLAGS)
+AC_SUBST(ELL_LIBS)
+
 AC_ARG_ENABLE(optimization, AC_HELP_STRING([--disable-optimization],
 			[disable code optimization through compiler]), [
 	if (test "${enableval}" = "no"); then
