@@ -24,6 +24,7 @@
 #endif
 
 #include <stdlib.h>
+#include <inttypes.h>
 #include <errno.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -66,12 +67,13 @@ struct idle_pipe {
 	struct l_idle *idle;	/* Polling idle for radio data */
 	int rxsock;		/* nRF24 HAL COMM socket */
 	int txsock;		/* knotd/upperlayer socket */
+	uint32_t timestamp;	/* Timestamp of the last received data */
 };
 
 struct beacon {
 	struct nrf24_mac addr;
 	char *name;
-	unsigned long last_beacon;
+	uint32_t last_beacon;
 };
 
 static struct nrf24_adapter adapter; /* Supports only one local adapter */
@@ -111,31 +113,21 @@ static bool pipe_match_addr(const void *a, const void *b)
 	return (ret ? false : true);
 }
 
-static int nrf24_mac_cmp(const void *a, const void *b)
-{
-	const struct nrf24_device *device = a;
-	const struct nrf24_mac *addr2 = b;
-	struct nrf24_mac addr1;
-
-	device_get_address(device, &addr1);
-
-	return memcmp(&addr1, addr2, sizeof(addr1));
-}
-
-static int beacon_mac_cmp(const void *a, const void *b)
-{
-	const struct beacon *beacon = a;
-	const struct nrf24_mac *addr = b;
-
-	return memcmp(&beacon->addr, addr, sizeof(beacon->addr));
-}
-
 static void beacon_timeout_cb(struct l_timeout *timeout, void *user_data)
 {
 	int ms = hal_time_ms();
 
 	l_hashmap_foreach_remove(adapter.beacon_list,
 				 beacon_match_if_expired, &ms);
+}
+
+static unsigned int nrf24_mac_hash(const void *p)
+{
+	const struct nrf24_mac *addr = p;
+	uint32_t most = addr->address.uint64 >> 32;
+	uint32_t less = addr->address.uint64;
+
+	return (most | less);
 }
 
 static int unix_connect(void)
@@ -256,6 +248,13 @@ static bool io_read(struct l_io *io, void *user_data)
 	return true;
 }
 
+static void remove_idle_oneshot(void *user_data)
+{
+	struct l_idle *idle = user_data;
+	/* Calls radio_idle_destroy */
+	l_idle_remove(idle);
+}
+
 static void pipe_destroy(void *user_data)
 {
 	struct idle_pipe *pipe = user_data;
@@ -277,32 +276,47 @@ static void radio_idle_destroy(void *user_data)
 
 static void radio_idle_read(struct l_idle *idle, void *user_data)
 {
-	const struct idle_pipe *pipe = user_data;
+	struct idle_pipe *pipe = user_data;
 	struct nrf24_device *device;
 	uint8_t buffer[256];
 	char mac_str[24];
 	int rx, err;
+	uint32_t timestamp = hal_time_ms();
+	bool online;
 
 	rx = hal_comm_read(pipe->rxsock, &buffer, sizeof(buffer));
-	if (rx > 0) {
-		if (write(pipe->txsock, buffer, rx) < 0) {
-			err = errno;
-			hal_log_error("write to knotd: %s(%d)",
-				      strerror(err), err);
-		}
-		/*
-		 * FIXME: MGMT should be extended to notify connection
-		 * complete event for host initiated connection.
-		 */
-
-		device = l_hashmap_remove(adapter.paging_list, &pipe->addr);
-		if (!device)
+	if (rx <= 0) {
+		if (hal_timeout(timestamp, pipe->timestamp, 500) > 0) {
+			/* Connection attempt failed */
+			online = false;
+			goto done;
+		} else
 			return;
+	}
 
+	pipe->timestamp = timestamp;
+	if (write(pipe->txsock, buffer, rx) < 0) {
+		err = errno;
+		hal_log_error("write to knotd: %s(%d)",
+			      strerror(err), err);
+	}
+	/*
+	 * FIXME: MGMT should be extended to notify connection
+	 * complete event for host initiated connection.
+	 */
+	online = true;
+done:
+	nrf24_mac2str(&pipe->addr, mac_str);
+	device = l_hashmap_remove(adapter.paging_list, &pipe->addr);
+	if (!device)
+		return;
+
+	if (online) {
 		l_hashmap_insert(adapter.online_list,
 				 L_INT_TO_PTR(pipe->rxsock), device);
-		nrf24_mac2str(&pipe->addr, mac_str);
-		hal_log_info("%p %s connection complete", device, mac_str);
+	} else {
+		l_hashmap_insert(adapter.offline_list, &pipe->addr, device);
+		l_idle_oneshot(remove_idle_oneshot, pipe->idle, NULL);
 	}
 }
 
@@ -315,6 +329,7 @@ static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 		(struct mgmt_evt_nrf24_disconnected *) mhdr->payload;
 
 	nrf24_mac2str(&evt->mac, mac_str);
+
 	hal_log_info("Peer disconnected(%s)", mac_str);
 
 	pipe = l_queue_remove_if(adapter.idle_list, pipe_match_addr, &evt->mac);
@@ -324,19 +339,25 @@ static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 	/* Move from online to offline */
 	device = l_hashmap_remove(adapter.online_list,
 				  L_INT_TO_PTR(pipe->rxsock));
+	/* Remove & destroy idle */
+	l_idle_remove(pipe->idle);
+
+	if (!device) {
+		/* Connection might be in progress */
+		device = l_hashmap_remove(adapter.paging_list, &evt->mac);
+		if (!device)
+			return;
+	}
 
 	l_hashmap_insert(adapter.offline_list, &evt->mac, device);
 
 	/* TODO: Set device disconnected */
-
-	/* Remove & destroy idle */
-	l_idle_remove(pipe->idle);
 }
 
 static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 {
 	struct l_io *io;
-	int sock, nsk, ret;
+	int sock, nsk;
 	char mac_str[24];
 	const char *end;
 	struct beacon *beacon;
@@ -373,8 +394,6 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	if (!beacon->name)
 		beacon->name = l_strdup("unknown");
 
-	hal_log_info("Thing sending presence. MAC = %s Name = %s",
-						mac_str, beacon->name);
 	/*
 	 * MAC and device name will be printed only once, but the last presence
 	 * time is updated. Every time a user refresh the list in the webui
@@ -394,8 +413,14 @@ done:
 	/* Connection in progress? */
 	device = l_hashmap_lookup(adapter.paging_list, &evt_pre->mac);
 	if (device) {
-		hal_log_info("Connection in progress ...");
-		return 0;
+		pipe = l_queue_find(adapter.idle_list,
+				    pipe_match_addr,
+				    &evt_pre->mac);
+		if (!pipe)
+			return 0;
+
+		nsk = pipe->rxsock;
+		goto connect_attempt;
 	}
 
 	/* Register not paired/unknown devices */
@@ -441,17 +466,18 @@ done:
 	pipe->rxsock = nsk; /* Radio */
 	pipe->txsock = sock; /* knotd */
 	pipe->addr = evt_pre->mac;
+	pipe->timestamp = hal_time_ms();
 	pipe->idle = l_idle_create(radio_idle_read, pipe,
 				   radio_idle_destroy);
 	l_queue_push_head(adapter.idle_list, pipe);
 
-	/* Send Connect */
-	hal_log_info("Conneting to %p %s", device, mac_str);
-	ret = hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
-	if (ret == 0)
-		l_hashmap_insert(adapter.paging_list, &evt_pre->mac, device);
+	l_hashmap_remove(adapter.offline_list, &evt_pre->mac);
+	l_hashmap_insert(adapter.paging_list, &evt_pre->mac, device);
 
-	return ret;
+connect_attempt:
+	hal_log_info("Conneting to %p %s", device, mac_str);
+
+	return hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
 }
 
 static void mgmt_idle_read(struct l_idle *idle, void *user_data)
@@ -636,13 +662,14 @@ int adapter_start(const char *host, const char *keys_pathname,
 		return ret;
 
 	memset(&adapter, 0, sizeof(struct nrf24_adapter));
+	adapter.idle_list = l_queue_new();
+	adapter.online_list = l_hashmap_new();
 	adapter.offline_list = l_hashmap_new();
 	adapter.paging_list = l_hashmap_new();
-	adapter.online_list = l_hashmap_new();
 	adapter.beacon_list = l_hashmap_new();
-
-	l_hashmap_set_compare_function(adapter.offline_list, nrf24_mac_cmp);
-	l_hashmap_set_compare_function(adapter.beacon_list, beacon_mac_cmp);
+	l_hashmap_set_hash_function(adapter.offline_list, nrf24_mac_hash);
+	l_hashmap_set_hash_function(adapter.paging_list, nrf24_mac_hash);
+	l_hashmap_set_hash_function(adapter.beacon_list, nrf24_mac_hash);
 
 	adapter.path = l_strdup(path);
 	adapter.keys_pathname = l_strdup(keys_pathname);
