@@ -45,7 +45,7 @@ struct nrf24_device {
 };
 
 /* TODO: Missing set name */
-static bool device_property_get_name(struct l_dbus *dbus,
+static bool property_get_name(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
@@ -58,7 +58,7 @@ static bool device_property_get_name(struct l_dbus *dbus,
 	return true;
 }
 
-static bool device_property_get_address(struct l_dbus *dbus,
+static bool property_get_address(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
@@ -75,7 +75,7 @@ static bool device_property_get_address(struct l_dbus *dbus,
 }
 
 /* TODO: Missing connection tracking  */
-static bool device_property_get_connected(struct l_dbus *dbus,
+static bool property_get_connected(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
@@ -93,7 +93,7 @@ static bool device_property_get_connected(struct l_dbus *dbus,
 
 /* TODO: Missing to store the device when set_paired is called */
 
-static bool device_property_get_paired(struct l_dbus *dbus,
+static bool property_get_paired(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
@@ -110,22 +110,22 @@ static bool device_property_get_paired(struct l_dbus *dbus,
 static void device_setup_interface(struct l_dbus_interface *interface)
 {
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
-				       device_property_get_name,
+				       property_get_name,
 				       NULL))
 		hal_log_error("Can't add 'Name' property");
 
 	if (!l_dbus_interface_property(interface, "Address", 0, "s",
-				       device_property_get_address,
+				       property_get_address,
 				       NULL))
 		hal_log_error("Can't add 'Address' property");
 
 	if (!l_dbus_interface_property(interface, "Connected", 0, "b",
-				       device_property_get_connected,
+				       property_get_connected,
 				       NULL))
 		hal_log_error("Can't add 'Connected' property");
 
 	if (!l_dbus_interface_property(interface, "Paired", 0, "b",
-				       device_property_get_paired,
+				       property_get_paired,
 				       NULL))
 		hal_log_error("Can't add 'Paired' property");
 }
