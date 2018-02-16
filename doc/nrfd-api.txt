@@ -52,7 +52,7 @@ Interface 	org.cesar.nrf.Device1
 Object path 	[variable prefix]/{nrf0, nrf1, ...}/dev_xx_xx_xx_xx_xx_xx_xx_xx
 
 
-Methods 	void Bind(dict properties)
+Methods 	void Pair(dict properties)
 
 		This method allows to create persistent association. Allowed
 		properties: "PublicKey", "PrivateKey". Keys are optional,

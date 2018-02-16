@@ -44,6 +44,20 @@ struct nrf24_device {
 	bool connected;
 };
 
+static struct l_dbus_message *method_pair(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct nrf24_device *device= user_data;
+
+	if (device->paired)
+		return l_dbus_message_new_method_return(msg);
+
+	device->paired = true;
+
+	return l_dbus_message_new_method_return(msg);
+}
+
 /* TODO: Missing set name */
 static bool property_get_name(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
@@ -109,6 +123,9 @@ static bool property_get_paired(struct l_dbus *dbus,
 
 static void device_setup_interface(struct l_dbus_interface *interface)
 {
+	l_dbus_interface_method(interface, "Pair", 0,
+				method_pair, "", "", "");
+
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       property_get_name,
 				       NULL))
