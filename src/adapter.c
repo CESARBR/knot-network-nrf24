@@ -537,7 +537,7 @@ static void radio_stop(void)
 	hal_comm_deinit();
 }
 
-static struct l_dbus_message *adapter_remove_device(struct l_dbus *dbus,
+static struct l_dbus_message *method_remove_device(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
 {
@@ -551,7 +551,7 @@ static struct l_dbus_message *adapter_remove_device(struct l_dbus *dbus,
 	return l_dbus_message_new_method_return(msg);
 }
 
-static bool adapter_property_get_powered(struct l_dbus *dbus,
+static bool property_get_powered(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
@@ -565,7 +565,7 @@ static bool adapter_property_get_powered(struct l_dbus *dbus,
 	return true;
 }
 
-static bool adapter_property_get_address(struct l_dbus *dbus,
+static bool property_get_address(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
@@ -585,15 +585,15 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 {
 
 	l_dbus_interface_method(interface, "RemoveDevice", 0,
-				adapter_remove_device, "", "o", "path");
+				method_remove_device, "", "o", "path");
 
 	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
-				       adapter_property_get_powered,
+				       property_get_powered,
 				       NULL))
 		hal_log_error("Can't add 'Powered' property");
 
 	if (!l_dbus_interface_property(interface, "Address", 0, "s",
-				       adapter_property_get_address,
+				       property_get_address,
 				       NULL))
 		hal_log_error("Can't add 'Address' property");
 }
