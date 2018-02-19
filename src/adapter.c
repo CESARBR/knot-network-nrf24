@@ -58,7 +58,6 @@ struct nrf24_adapter {
 	struct l_hashmap *offline_list;	/* Disconnected devices */
 	struct l_hashmap *paging_list;	/* Paging/connecting devices */
 	struct l_hashmap *online_list;	/* Connected devices */
-	struct l_hashmap *beacon_list;	/* Detected devices */
 	struct l_queue *idle_list;	/* Connection mapping */
 };
 
@@ -70,39 +69,11 @@ struct idle_pipe {
 	uint32_t timestamp;	/* Timestamp of the last received data */
 };
 
-struct beacon {
-	struct nrf24_mac addr;
-	char *name;
-	uint32_t last_beacon;
-};
-
 static struct nrf24_adapter adapter; /* Supports only one local adapter */
-static struct l_timeout *beacon_to; /* Clear beacon list */
 static struct l_idle *mgmt_idle;
 static struct in_addr inet_address;
 static int tcp_port;
 static int mgmtfd;
-
-static void beacon_free(void *user_data)
-{
-	struct beacon *beacon = user_data;
-
-	l_free(beacon->name);
-	l_free(beacon);
-}
-
-static bool beacon_match_if_expired(const void *key,
-				    void *value, void *user_data)
-{
-	const struct beacon *beacon = value;
-	const int *ms = user_data;
-
-	/* If it returns true the key/value is removed */
-	if (hal_timeout(*ms, beacon->last_beacon, BCAST_TIMEOUT) > 0)
-		return true;
-
-	return false;
-}
 
 static bool pipe_match_addr(const void *a, const void *b)
 {
@@ -111,14 +82,6 @@ static bool pipe_match_addr(const void *a, const void *b)
 	int ret = memcmp(&pipe->addr, addr, sizeof(pipe->addr));
 
 	return (ret ? false : true);
-}
-
-static void beacon_timeout_cb(struct l_timeout *timeout, void *user_data)
-{
-	int ms = hal_time_ms();
-
-	l_hashmap_foreach_remove(adapter.beacon_list,
-				 beacon_match_if_expired, &ms);
 }
 
 static unsigned int nrf24_mac_hash(const void *p)
@@ -360,47 +323,12 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	int sock, nsk;
 	char mac_str[24];
 	const char *end;
-	struct beacon *beacon;
+	char *name;
 	struct nrf24_device *device;
 	struct idle_pipe *pipe;
 	struct mgmt_evt_nrf24_bcast_presence *evt_pre =
 			(struct mgmt_evt_nrf24_bcast_presence *) mhdr->payload;
 	ssize_t name_len;
-
-	nrf24_mac2str(&evt_pre->mac, mac_str);
-	beacon = l_hashmap_lookup(adapter.beacon_list, &evt_pre->mac);
-	if (beacon) {
-		/* Entry found */
-		beacon->last_beacon = hal_time_ms();
-		goto done;
-	}
-
-	/*
-	 * Calculating the size of the name correctly: rbytes contains the
-	 * amount of data received and this contains two structures:
-	 * mgmt_nrf24_header & mgmt_evt_nrf24_bcast_presence.
-	 */
-	name_len = rbytes - sizeof(*mhdr) - sizeof(*evt_pre);
-
-	/* Creating a UTF-8 copy of the name */
-	if (l_utf8_validate(evt_pre->name, name_len, &end) == false)
-		goto done;
-
-	beacon = l_new(struct beacon, 1);
-	beacon->addr = evt_pre->mac;
-	beacon->last_beacon = hal_time_ms();
-	beacon->name = l_strndup(evt_pre->name, name_len);
-
-	if (!beacon->name)
-		beacon->name = l_strdup("unknown");
-
-	/*
-	 * MAC and device name will be printed only once, but the last presence
-	 * time is updated. Every time a user refresh the list in the webui
-	 * we will discard devices that broadcasted
-	 */
-	l_hashmap_insert(adapter.beacon_list, &beacon->addr, beacon);
-done:
 
 	/*
 	 * Paired device: Read from storage, connect automatically.
@@ -420,15 +348,30 @@ done:
 			return 0;
 
 		nsk = pipe->rxsock;
-		goto connect_attempt;
+		goto connect_again;
 	}
 
 	/* Register not paired/unknown devices */
 	device = l_hashmap_lookup(adapter.offline_list, &evt_pre->mac);
 	if (!device) {
-		device = device_create(adapter.path, &evt_pre->mac,
-				       beacon->name, false);
+		/*
+		 * Calculating the size of the name correctly: rbytes contains the
+		 * amount of data received and this contains two structures:
+		 * mgmt_nrf24_header & mgmt_evt_nrf24_bcast_presence.
+		 */
+		name_len = rbytes - sizeof(*mhdr) - sizeof(*evt_pre);
+
+		/* Creating a UTF-8 copy of the name */
+		if (l_utf8_validate(evt_pre->name, name_len, &end) == false)
+			return 0;
+
+		name = l_strndup(evt_pre->name, name_len);
+		device = device_create(adapter.path,
+				       &evt_pre->mac, name, false);
+		l_free(name);
+
 		l_hashmap_insert(adapter.offline_list, &evt_pre->mac, device);
+
 		return 0;
 	}
 
@@ -474,7 +417,8 @@ done:
 	l_hashmap_remove(adapter.offline_list, &evt_pre->mac);
 	l_hashmap_insert(adapter.paging_list, &evt_pre->mac, device);
 
-connect_attempt:
+connect_again:
+	nrf24_mac2str(&evt_pre->mac, mac_str);
 	hal_log_info("Conneting to %p %s", device, mac_str);
 
 	return hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
@@ -666,10 +610,8 @@ int adapter_start(const char *host, const char *keys_pathname,
 	adapter.online_list = l_hashmap_new();
 	adapter.offline_list = l_hashmap_new();
 	adapter.paging_list = l_hashmap_new();
-	adapter.beacon_list = l_hashmap_new();
 	l_hashmap_set_hash_function(adapter.offline_list, nrf24_mac_hash);
 	l_hashmap_set_hash_function(adapter.paging_list, nrf24_mac_hash);
-	l_hashmap_set_hash_function(adapter.beacon_list, nrf24_mac_hash);
 
 	adapter.path = l_strdup(path);
 	adapter.keys_pathname = l_strdup(keys_pathname);
@@ -703,8 +645,6 @@ int adapter_start(const char *host, const char *keys_pathname,
 	/* Load & create/register stored devices */
 	storage_foreach(adapter.keys_pathname, register_device, &adapter);
 
-	beacon_to = l_timeout_create(5, beacon_timeout_cb, NULL, NULL);
-
 	return 0;
 }
 
@@ -713,8 +653,6 @@ void adapter_stop(void)
 
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    ADAPTER_INTERFACE);
-
-	l_timeout_remove(beacon_to);
 
 	radio_stop();
 
@@ -731,5 +669,4 @@ void adapter_stop(void)
 			(l_hashmap_destroy_func_t ) device_destroy);
 	l_hashmap_destroy(adapter.online_list,
 			(l_hashmap_destroy_func_t ) device_destroy);
-	l_hashmap_destroy(adapter.beacon_list, beacon_free);
 }
