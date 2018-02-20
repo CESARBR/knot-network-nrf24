@@ -48,12 +48,25 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
 {
-	struct nrf24_device *device= user_data;
+	struct nrf24_device *device = user_data;
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
 
 	if (device->paired)
 		return l_dbus_message_new_method_return(msg);
 
 	device->paired = true;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Paired");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &device->paired);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
 
 	return l_dbus_message_new_method_return(msg);
 }
