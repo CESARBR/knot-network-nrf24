@@ -355,15 +355,9 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	if (l_hashmap_size(adapter.online_list) == MAX_PEERS)
 		return -EUSERS; /* MAX PEERS: No room for more connection */
 
-	/* Connection in progress? */
-	device = l_hashmap_lookup(adapter.paging_list, &evt_pre->mac);
-	if (device) {
-		pipe = l_queue_find(adapter.idle_list,
-				    pipe_match_addr,
-				    &evt_pre->mac);
-		if (!pipe)
-			return 0;
-
+	/* Connection in progress or quick remote initiated disconnection ? */
+	pipe = l_queue_find(adapter.idle_list, pipe_match_addr, &evt_pre->mac);
+	if (pipe) {
 		nsk = pipe->rxsock;
 		goto connect_again;
 	}
