@@ -93,6 +93,24 @@ static unsigned int nrf24_mac_hash(const void *p)
 	return (most | less);
 }
 
+static int nrf24_mac_compare(const void *a, const void *b)
+{
+	const struct nrf24_mac *mac1 = a; /* user informed */
+	const struct nrf24_mac *mac2 = b; /* hashmap key */
+
+	return memcmp(mac1, mac2, sizeof(struct nrf24_mac));
+}
+
+static void *nrf24_dup(const void *a)
+{
+	return l_memdup(a, sizeof(struct nrf24_mac));
+}
+
+static void nrf24_destroy(void *a)
+{
+	l_free(a);
+}
+
 static int unix_connect(void)
 {
 	struct sockaddr_un addr;
@@ -242,7 +260,6 @@ static void radio_idle_read(struct l_idle *idle, void *user_data)
 	struct idle_pipe *pipe = user_data;
 	struct nrf24_device *device;
 	uint8_t buffer[256];
-	char mac_str[24];
 	int rx, err;
 	uint32_t timestamp = hal_time_ms();
 	bool online;
@@ -269,7 +286,6 @@ static void radio_idle_read(struct l_idle *idle, void *user_data)
 	 */
 	online = true;
 done:
-	nrf24_mac2str(&pipe->addr, mac_str);
 	device = l_hashmap_remove(adapter.paging_list, &pipe->addr);
 	if (!device)
 		return;
@@ -419,7 +435,7 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 
 connect_again:
 	nrf24_mac2str(&evt_pre->mac, mac_str);
-	hal_log_info("Conneting to %p %s", device, mac_str);
+	hal_log_info("Conneting to %s", mac_str);
 
 	return hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
 }
@@ -612,6 +628,12 @@ int adapter_start(const char *host, const char *keys_pathname,
 	adapter.paging_list = l_hashmap_new();
 	l_hashmap_set_hash_function(adapter.offline_list, nrf24_mac_hash);
 	l_hashmap_set_hash_function(adapter.paging_list, nrf24_mac_hash);
+	l_hashmap_set_compare_function(adapter.offline_list, nrf24_mac_compare);
+	l_hashmap_set_compare_function(adapter.paging_list, nrf24_mac_compare);
+	l_hashmap_set_key_copy_function(adapter.offline_list, nrf24_dup);
+	l_hashmap_set_key_copy_function(adapter.paging_list, nrf24_dup);
+	l_hashmap_set_key_free_function(adapter.offline_list, nrf24_destroy);
+	l_hashmap_set_key_free_function(adapter.paging_list, nrf24_destroy);
 
 	adapter.path = l_strdup(path);
 	adapter.keys_pathname = l_strdup(keys_pathname);
