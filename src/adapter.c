@@ -195,6 +195,7 @@ static void io_destroy(void *user_data)
 		return;
 
 	device_get_address(device, &addr);
+	device_set_connected(device, false);
 
 	l_hashmap_insert(adapter.offline_list, &addr, device);
 
@@ -293,6 +294,7 @@ done:
 	if (online) {
 		l_hashmap_insert(adapter.online_list,
 				 L_INT_TO_PTR(pipe->rxsock), device);
+		device_set_connected(device, true);
 	} else {
 		l_hashmap_insert(adapter.offline_list, &pipe->addr, device);
 		l_idle_oneshot(remove_idle_oneshot, pipe->idle, NULL);
@@ -329,8 +331,7 @@ static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 	}
 
 	l_hashmap_insert(adapter.offline_list, &evt->mac, device);
-
-	/* TODO: Set device disconnected */
+	device_set_connected(device, false);
 }
 
 static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)

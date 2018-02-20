@@ -217,6 +217,27 @@ bool device_is_paired(const struct nrf24_device *device)
 	return device->paired;
 }
 
+void device_set_connected(struct nrf24_device *device, bool connected)
+{
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
+
+	if (device->connected == connected)
+		return;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   device->path,
+					   DEVICE_INTERFACE,
+					   "Connected");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &connected);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
+
+	device->connected = connected;
+}
 
 int device_start(void)
 {
