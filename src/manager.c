@@ -34,6 +34,7 @@
 #include "storage.h"
 #include "adapter.h"
 #include "dbus.h"
+#include "proxy.h"
 #include "manager.h"
 
 int manager_start(const char *file, const char *host, int port,
@@ -72,6 +73,7 @@ int manager_start(const char *file, const char *host, int port,
 		dbm = cfg_dbm;
 
 	dbus_start();
+	proxy_start();
 
 	/* TODO: Missing error handling */
 	return adapter_start(host, keys_pathname, channel, port, &mac);
@@ -80,5 +82,6 @@ int manager_start(const char *file, const char *host, int port,
 void manager_stop(void)
 {
 	adapter_stop();
+	proxy_stop();
 	dbus_stop();
 }
