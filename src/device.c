@@ -39,7 +39,8 @@
 struct nrf24_device {
 	struct nrf24_mac addr;
 	char *name;
-	char *path;
+	char *dpath;		/* Device object path */
+	char *apath;		/* Adapter object path */
 	bool paired;
 	bool connected;
 };
@@ -58,7 +59,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	device->paired = true;
 
 	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
+					   device->dpath,
 					   DEVICE_INTERFACE,
 					   "Paired");
 	builder = l_dbus_message_builder_new(signal);
@@ -80,7 +81,21 @@ static bool property_get_name(struct l_dbus *dbus,
 	struct nrf24_device *device= user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', device->name);
-	hal_log_info("%s GetProperty(Name = %s)", device->path, device->name);
+	hal_log_info("%s GetProperty(Name = %s)", device->dpath, device->name);
+
+	return true;
+}
+
+static bool property_get_adapter(struct l_dbus *dbus,
+				  struct l_dbus_message *msg,
+				  struct l_dbus_message_builder *builder,
+				  void *user_data)
+{
+	struct nrf24_device *device = user_data;
+
+	l_dbus_message_builder_append_basic(builder, 'o', device->apath);
+	hal_log_info("%s GetProperty(Adapter = %s)",
+		     device->dpath, device->apath);
 
 	return true;
 }
@@ -96,7 +111,7 @@ static bool property_get_address(struct l_dbus *dbus,
 	nrf24_mac2str(&device->addr, str);
 
 	l_dbus_message_builder_append_basic(builder, 's', str);
-	hal_log_info("%s GetProperty(Address = %s)", device->path, str);
+	hal_log_info("%s GetProperty(Address = %s)", device->dpath, str);
 
 	return true;
 }
@@ -113,7 +128,7 @@ static bool property_get_connected(struct l_dbus *dbus,
 
 	l_dbus_message_builder_append_basic(builder, 'b', &device->connected);
 	hal_log_info("%s GetProperty(Powered = %d)",
-		     device->path, device->connected);
+		     device->dpath, device->connected);
 
 	return true;
 }
@@ -129,7 +144,7 @@ static bool property_get_paired(struct l_dbus *dbus,
 
 	l_dbus_message_builder_append_basic(builder, 'b', &device->paired);
 	hal_log_info("%s GetProperty(Paired = %d)",
-		     device->path, device->paired);
+		     device->dpath, device->paired);
 
 	return true;
 }
@@ -143,6 +158,11 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       property_get_name,
 				       NULL))
 		hal_log_error("Can't add 'Name' property");
+
+	if (!l_dbus_interface_property(interface, "Adapter", 0, "o",
+				       property_get_adapter,
+				       NULL))
+		hal_log_error("Can't add 'Adapter' property");
 
 	if (!l_dbus_interface_property(interface, "Address", 0, "s",
 				       property_get_address,
@@ -188,7 +208,8 @@ struct nrf24_device *device_create(const char *adapter_path,
 			device_path[i] = '_';
 	}
 
-	device->path = l_strdup(device_path);
+	device->apath = l_strdup(adapter_path);
+	device->dpath = l_strdup(device_path);
 	if (!l_dbus_object_add_interface(dbus_get_bus(),
 					 device_path,
 					 DEVICE_INTERFACE,
@@ -209,13 +230,14 @@ struct nrf24_device *device_create(const char *adapter_path,
 void device_destroy(struct nrf24_device *device)
 {
 	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->path,
+				       device->dpath,
 				       DEVICE_INTERFACE);
 	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->path,
+				       device->dpath,
 				       L_DBUS_INTERFACE_PROPERTIES);
 	l_free(device->name);
-	l_free(device->path);
+	l_free(device->dpath);
+	l_free(device->apath);
 	l_free(device);
 }
 
@@ -239,7 +261,7 @@ void device_set_connected(struct nrf24_device *device, bool connected)
 		return;
 
 	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->path,
+					   device->dpath,
 					   DEVICE_INTERFACE,
 					   "Connected");
 	builder = l_dbus_message_builder_new(signal);
