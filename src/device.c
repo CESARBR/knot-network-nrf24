@@ -78,7 +78,7 @@ static bool property_get_name(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	struct nrf24_device *device= user_data;
+	struct nrf24_device *device = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 's', device->name);
 	hal_log_info("%s GetProperty(Name = %s)", device->dpath, device->name);
@@ -105,7 +105,7 @@ static bool property_get_address(struct l_dbus *dbus,
 				  struct l_dbus_message_builder *builder,
 				  void *user_data)
 {
-	struct nrf24_device *device= user_data;
+	struct nrf24_device *device = user_data;
 	char str[24];
 
 	nrf24_mac2str(&device->addr, str);
@@ -116,15 +116,12 @@ static bool property_get_address(struct l_dbus *dbus,
 	return true;
 }
 
-/* TODO: Missing connection tracking  */
 static bool property_get_connected(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
 {
-	struct nrf24_device *device= user_data;
-
-	/* TODO: missing implementation */
+	struct nrf24_device *device = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 'b', &device->connected);
 	hal_log_info("%s GetProperty(Powered = %d)",
@@ -140,7 +137,7 @@ static bool property_get_paired(struct l_dbus *dbus,
 				     struct l_dbus_message_builder *builder,
 				     void *user_data)
 {
-	struct nrf24_device *device= user_data;
+	struct nrf24_device *device = user_data;
 
 	l_dbus_message_builder_append_basic(builder, 'b', &device->paired);
 	hal_log_info("%s GetProperty(Paired = %d)",
