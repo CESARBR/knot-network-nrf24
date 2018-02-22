@@ -29,6 +29,6 @@ bool device_is_paired(const struct nrf24_device *device);
 void device_set_connected(struct nrf24_device *device, bool connected);
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
-				   const char *name, bool paired);
+				   uint64_t id, const char *name, bool paired);
 void device_destroy(struct nrf24_device *device);
 

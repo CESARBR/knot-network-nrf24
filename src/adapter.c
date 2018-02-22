@@ -344,7 +344,7 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	char *name;
 	struct nrf24_device *device;
 	struct idle_pipe *pipe;
-	struct mgmt_evt_nrf24_bcast_presence *evt_pre =
+	struct mgmt_evt_nrf24_bcast_presence *evt =
 			(struct mgmt_evt_nrf24_bcast_presence *) mhdr->payload;
 	ssize_t name_len;
 
@@ -357,32 +357,32 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 		return -EUSERS; /* MAX PEERS: No room for more connection */
 
 	/* Connection in progress or quick remote initiated disconnection ? */
-	pipe = l_queue_find(adapter.idle_list, pipe_match_addr, &evt_pre->mac);
+	pipe = l_queue_find(adapter.idle_list, pipe_match_addr, &evt->mac);
 	if (pipe) {
 		nsk = pipe->rxsock;
 		goto connect_again;
 	}
 
 	/* Register not paired/unknown devices */
-	device = l_hashmap_lookup(adapter.offline_list, &evt_pre->mac);
+	device = l_hashmap_lookup(adapter.offline_list, &evt->mac);
 	if (!device) {
 		/*
 		 * Calculating the size of the name correctly: rbytes contains the
 		 * amount of data received and this contains two structures:
 		 * mgmt_nrf24_header & mgmt_evt_nrf24_bcast_presence.
 		 */
-		name_len = rbytes - sizeof(*mhdr) - sizeof(*evt_pre);
+		name_len = rbytes - sizeof(*mhdr) - sizeof(*evt);
 
 		/* Creating a UTF-8 copy of the name */
-		if (l_utf8_validate(evt_pre->name, name_len, &end) == false)
+		if (l_utf8_validate(evt->name, name_len, &end) == false)
 			return 0;
 
-		name = l_strndup(evt_pre->name, name_len);
+		name = l_strndup(evt->name, name_len);
 		device = device_create(adapter.path,
-				       &evt_pre->mac, name, false);
+				       &evt->mac, evt->id, name, false);
 		l_free(name);
 
-		l_hashmap_insert(adapter.offline_list, &evt_pre->mac, device);
+		l_hashmap_insert(adapter.offline_list, &evt->mac, device);
 
 		return 0;
 	}
@@ -420,20 +420,20 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	pipe = l_new(struct idle_pipe, 1);
 	pipe->rxsock = nsk; /* Radio */
 	pipe->txsock = sock; /* knotd */
-	pipe->addr = evt_pre->mac;
+	pipe->addr = evt->mac;
 	pipe->timestamp = hal_time_ms();
 	pipe->idle = l_idle_create(radio_idle_read, pipe,
 				   radio_idle_destroy);
 	l_queue_push_head(adapter.idle_list, pipe);
 
-	l_hashmap_remove(adapter.offline_list, &evt_pre->mac);
-	l_hashmap_insert(adapter.paging_list, &evt_pre->mac, device);
+	l_hashmap_remove(adapter.offline_list, &evt->mac);
+	l_hashmap_insert(adapter.paging_list, &evt->mac, device);
 
 connect_again:
-	nrf24_mac2str(&evt_pre->mac, mac_str);
+	nrf24_mac2str(&evt->mac, mac_str);
 	hal_log_info("Conneting to %s", mac_str);
 
-	return hal_comm_connect(nsk, &evt_pre->mac.address.uint64);
+	return hal_comm_connect(nsk, &evt->mac.address.uint64);
 }
 
 static void mgmt_idle_read(struct l_idle *idle, void *user_data)
@@ -527,6 +527,7 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	struct nrf24_device *device;
 	struct nrf24_mac addr;
 	const char *mac_str;
+	uint64_t id = UINT64_MAX; /* FIXME: get from dict */
 
 	if (!l_dbus_message_get_arguments(msg, "s", &mac_str))
 		return dbus_error_invalid_args(msg);
@@ -534,7 +535,7 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	nrf24_str2mac(mac_str, &addr);
 
 	/* FIXME: Name is unknown */
-	device = device_create(adapter->path, &addr, "unknown", true);
+	device = device_create(adapter->path, &addr, id, "unknown", true);
 	if (!device)
 		return dbus_error_invalid_args(msg);
 
@@ -612,11 +613,12 @@ static void register_device(const char *mac, const char *name, void *user_data)
 	struct nrf24_adapter *adapter = user_data;
 	struct nrf24_device *device;
 	struct nrf24_mac addr;
+	uint64_t id = UINT64_MAX; /* FIXME read from storage */
 
 	nrf24_str2mac(mac, &addr);
 
 	/* Registering paired devices */
-	device = device_create(adapter->path, &addr, name, true);
+	device = device_create(adapter->path, &addr, id, name, true);
 	if (!device)
 		return;
 
