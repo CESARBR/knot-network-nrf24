@@ -1,4 +1,4 @@
-nRF D-Bus API description
+nRF24 D-Bus API description
 **************************
 
 Service 	org.cesar.nrf
@@ -10,8 +10,16 @@ Object path 	[variable prefix]/{nrf0, nrf1, ...}
 
 Methods 	void RemoveDevice(object device)
 
-		Removes a remote nRF device including its local stored
+		Removes a remote nRF24 device including its local stored
 		data such as keys, and properties.
+
+		Returns: org.cesar.nrf.Error.InvalidArguments
+
+
+		void AddDevice(string mac)
+
+		Adds a new nRF24 device. Allows to create a new paired device
+		from external out-of-band sources.
 
 		Returns: org.cesar.nrf.Error.InvalidArguments
 
@@ -36,13 +44,13 @@ Methods 	void RemoveDevice(object device)
 
 Properties 	string Address [readonly]
 
-		Persistent property. 64-bit nRF address.
+		Persistent property. 64-bit nRF24 address.
 		eg: 88:77:66:55:44:33:22:11 (MSB on left)
 
 
 		boolean Powered [readwrite]
 
-		Not persistent property. Switch Switch nRF adapter on/off
+		Not persistent property. Switch Switch nRF24 adapter on/off
 
 
 
@@ -64,13 +72,13 @@ Methods 	void Pair(dict properties)
 
 Properties 	string Address [readonly]
 
-		64-bit nRF address.
+		64-bit nRF24 address.
 		eg: 88:77:66:55:44:33:22:11 (MSB on left)
 
 
 		string Name [readonly, optional]
 
-		nRF remote name. PropertiesChanged is be emitted if this
+		nRF24 remote name. PropertiesChanged is be emitted if this
 		value changes.
 
 
@@ -93,4 +101,4 @@ Properties 	string Address [readonly]
 
 		object Adapter [readonly]
 
-		Object path of the nRF adapter associated with this device.
+		Object path of the nRF24 adapter associated with this device.
