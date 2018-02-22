@@ -24,218 +24,187 @@
 #endif
 
 #include <stdio.h>
-#include <string.h>
+#include <stdbool.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
-#include <json-c/json.h>
+#include <ell/ell.h>
 
 #include "storage.h"
 
-static char *load_config(const char *pathname)
+static bool settings_to_file(const char *pathname, struct l_settings *settings)
 {
-	char *buffer;
-	int length;
-	FILE *fl = fopen(pathname, "r");
+	char *res;
+	size_t res_len;
+	int fd;
+	int err = true;
 
-	if (fl == NULL)
-		return NULL;
+	res = l_settings_to_data(settings, &res_len);
 
-	fseek(fl, 0, SEEK_END);
-	length = ftell(fl);
-	fseek(fl, 0, SEEK_SET);
-
-	buffer = (char *) malloc((length+1)*sizeof(char));
-	if (buffer) {
-		fread(buffer, length, 1, fl);
-		buffer[length] = '\0';
+	fd = open(pathname, O_WRONLY | O_TRUNC);
+	if (fd < 0){
+		err = false;
+		goto failure;
 	}
-		fclose(fl);
 
-	return buffer;
+	write(fd, res, res_len);
+
+
+failure:
+	l_free(res);
+	return err;
 }
 
-int storage_config_write_keyword(const char *pathname, const char *group,
-				 const char *key, const char *value)
+void storage_foreach_nrf24_keys(const char *pathname,
+				storage_foreach_func_t func, void *user_data)
 {
-	json_object *jobj, *obj_group;
+	struct l_settings *settings;
+	int i;
+	char **groups;
+	char *name;
 
-	jobj = json_tokener_parse(pathname);
-	if (jobj == NULL)
-		return -EINVAL;
+	settings = l_settings_new();
 
-	if (!json_object_object_get_ex(jobj, group, &obj_group))
-		goto done;
+	l_settings_load_from_file(settings, pathname);
 
-	json_object_object_add(obj_group, key, json_object_new_string(value));
+	groups = l_settings_get_groups(settings);
 
-	json_object_to_file((char *) pathname, jobj);
+	for (i = 0; groups[i] != NULL; i++){
+		name = l_settings_get_string(settings, groups[i], "name");
+		func(groups[i], name, user_data);
+	}
 
-done:
-	/* Free mem used in json parse: */
-	json_object_put(jobj);
+	l_settings_free(settings);
+}
 
+int storage_write_key_string(const char *pathname, const char *group,
+			const char *key, const char *value)
+{
+	struct l_settings *settings;
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	l_settings_set_string(settings, group, key, value);
+
+	settings_to_file(pathname, settings);
+
+	l_settings_free(settings);
 	return 0;
 }
 
-int storage_config_load(const char *pathname, int *channel, int *dbm, char *mac)
+char *storage_read_key_string(const char *pathname, const char *group,
+			const char *key)
 {
-	json_object *jobj, *obj_group, *obj_tmp;
-	const char *str;
-	char *config;
-	int err = -EINVAL;
+	struct l_settings *settings;
+	bool exist;
+	char *str = NULL;
 
-	config = load_config(pathname);
-	if (!config)
-	       return -EIO;
+	settings = l_settings_new();
 
-	jobj = json_tokener_parse(config);
+	l_settings_load_from_file(settings, pathname);
 
-	free(config);
-
-	if (jobj == NULL)
-		return -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "radio", &obj_group))
-		goto done;
-
-	if (json_object_object_get_ex(obj_group, "channel", &obj_tmp))
-		*channel = json_object_get_int(obj_tmp);
-
-	if (json_object_object_get_ex(obj_group,  "TxPower", &obj_tmp))
-		*dbm = json_object_get_int(obj_tmp);
-
-	if (json_object_object_get_ex(obj_group,  "mac", &obj_tmp)) {
-		if (json_object_get_string(obj_tmp) != NULL) {
-			str = json_object_get_string(obj_tmp);
-
-			/* Assuming that mac has enough space */
-			strcpy(mac, str);
-		}
-	}
-
-	/* Success */
-	err = 0;
-
-done:
-	/* Free mem used in json parse: */
-	json_object_put(jobj);
-
-	return err;
-}
-
-void storage_foreach(const char *pathname,
-				storage_foreach_func_t func, void *user_data)
-{
-	int array_len;
-	int i;
-	json_object *jobj;
-	json_object *obj_keys, *obj_nodes, *obj_tmp;
-	FILE *fp;
-	const char *addr;
-	const char *name;
-
-	/* Load nodes' info from json file */
-	jobj = json_object_from_file(pathname);
-	if (!jobj) {
-		fp = fopen(pathname, "w");
-		if (!fp)
-			goto done;
-
-		fprintf(fp, "{\"keys\":[]}");
-		fclose(fp);
-		goto done;
-	}
-
-	if (!json_object_object_get_ex(jobj, "keys", &obj_keys)){
-		fp = fopen(pathname, "w");
-		if (!fp)
-			goto done;
-
-		fprintf(fp, "{\"keys\":[]}");
-		fclose(fp);
-		goto done;
-	}
-
-	array_len = json_object_array_length(obj_keys);
-
-	for (i = 0; i < array_len; i++) {
-		obj_nodes = json_object_array_get_idx(obj_keys, i);
-		if (!json_object_object_get_ex(obj_nodes, "mac", &obj_tmp))
-			goto done;
-
-		addr = json_object_get_string(obj_tmp);
-		if (!addr)
-			goto done;
-
-		if (!json_object_object_get_ex(obj_nodes, "name", &obj_tmp))
-			goto done;
-
-		name = json_object_get_string(obj_tmp);
-		if (!name)
-			goto done;
-
-		func(addr, name, user_data);
-
-	}
-
-done:
-	/* Free mem used to parse json */
-	json_object_put(jobj);
-}
-
-int storage_write(const char *pathname, const char *addr,
-		       const char *key, const char *name)
-{
-	int array_len;
-	int i;
-	int err = -EINVAL;
-	json_object *jobj, *jobj2;
-	json_object *obj_keys, *obj_array, *obj_tmp, *obj_mac;
-
-	/* Load nodes' info from json file */
-	jobj = json_object_from_file(pathname);
-	if (!jobj)
-		return -EINVAL;
-
-	if (!json_object_object_get_ex(jobj, "keys", &obj_keys))
+	exist = l_settings_has_group(settings, group);
+	if (!exist)
 		goto failure;
 
-	array_len = json_object_array_length(obj_keys);
-	/*
-	 * If name and key are NULL it means to remove element
-	 * If only name is NULL, update some element
-	 * Otherwise add some element to file
-	 */
-	if (name == NULL && key == NULL) {
-		jobj2 = json_object_new_object();
-		obj_array = json_object_new_array();
-		for (i = 0; i < array_len; i++) {
-			obj_tmp = json_object_array_get_idx(obj_keys, i);
-			if (!json_object_object_get_ex(obj_tmp, "mac",
-								&obj_mac))
-				goto failure;
+	str = l_settings_get_string(settings, group, key);
 
-		/* Parse mac address string into struct nrf24_mac known_peers */
-			if (strcmp(json_object_get_string(obj_mac), addr) != 0)
-				json_object_array_add(obj_array,
-						json_object_get(obj_tmp));
-		}
-		json_object_object_add(jobj2, "keys", obj_array);
-		json_object_to_file(pathname, jobj2);
-		json_object_put(jobj2);
-	} else if (name == NULL) {
-	/* TODO update key of some mac (depends on adding keys to file) */
-	} else {
-		obj_tmp = json_object_new_object();
-		json_object_object_add(obj_tmp, "name",
-						json_object_new_string(name));
-		json_object_object_add(obj_tmp, "mac",
-						json_object_new_string(addr));
-		json_object_array_add(obj_keys, obj_tmp);
-		json_object_to_file(pathname, jobj);
-	}
+failure:
+	l_settings_free(settings);
+	return str;
+}
+
+int storage_write_key_int(const char *pathname, const char *group,
+			const char *key, int value)
+{
+	struct l_settings *settings;
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	l_settings_set_int(settings, group, key, value);
+
+	settings_to_file(pathname, settings);
+
+	l_settings_free(settings);
+	return 0;
+}
+
+int storage_read_key_int(const char *pathname, const char *group,
+			const char *key, int *value)
+{
+	struct l_settings *settings;
+	bool exist;
+	int err = -EINVAL;
+
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	exist = l_settings_has_group(settings, group);
+	if (!exist)
+		goto failure;
+
+	l_settings_get_int(settings, group, key, value);
 
 	err = 0;
 failure:
-	json_object_put(jobj);
+	l_settings_free(settings);
 	return err;
+}
+
+int storage_write_key_uint64(const char *pathname, const char *group,
+			const char *key, uint64_t value)
+{
+	struct l_settings *settings;
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	l_settings_set_uint64(settings, group, key, value);
+
+	settings_to_file(pathname, settings);
+
+	l_settings_free(settings);
+	return 0;
+}
+
+int storage_read_key_uint64(const char *pathname, const char *group,
+			const char *key, uint64_t *value)
+{
+	struct l_settings *settings;
+	bool exist;
+	int err = -EINVAL;
+
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	exist = l_settings_has_group(settings, group);
+	if (!exist)
+		goto failure;
+
+	l_settings_get_uint64(settings, group, key, value);
+
+	err = 0;
+failure:
+	l_settings_free(settings);
+	return err;
+}
+
+int storage_remove_group(const char *pathname, const char *group)
+{
+	struct l_settings *settings;
+
+	settings = l_settings_new();
+
+	l_settings_load_from_file(settings, pathname);
+
+	l_settings_remove_group(settings, group);
+
+	settings_to_file(pathname, settings);
+
+	l_settings_free(settings);
+	return 0;
 }

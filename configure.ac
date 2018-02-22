@@ -27,12 +27,6 @@ AC_PROG_LN_S
 LT_PREREQ(2.2)
 LT_INIT([disable-static])
 
-PKG_CHECK_MODULES(JSON, json-c,
-  [AC_DEFINE([HAVE_JSON],[1],[Use JSON])],
-  [AC_MSG_ERROR("json-c missing")])
-AC_SUBST(JSON_CFLAGS)
-AC_SUBST(JSON_LIBS)
-
 PKG_CHECK_MODULES(ELL, ell,
   [AC_DEFINE([HAVE_ELL],[1],[Use ELL])],
   [AC_MSG_ERROR("ell missing")])

@@ -45,14 +45,13 @@ int manager_start(const char *file, const char *host, int port,
 	char mac_str[24];
 
 	memset(mac_str, 0, sizeof(mac_str));
-	if (storage_config_load(file, &cfg_channel, &cfg_dbm, mac_str) == 0)
-		nrf24_str2mac(mac_str, &mac);
+	/* TODO: Verify radio configuration on storage file */
 
 	/* Command line arguments have higher priority */
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		storage_config_write_keyword(file, "radio", "mac", mac_str);
+		/* TODO: Store radio mac address*/
 	}
 
 	/*
