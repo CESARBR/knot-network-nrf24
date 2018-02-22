@@ -519,6 +519,30 @@ static void radio_stop(void)
 	hal_comm_deinit();
 }
 
+static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct nrf24_adapter *adapter = user_data;
+	struct nrf24_device *device;
+	struct nrf24_mac addr;
+	const char *mac_str;
+
+	if (!l_dbus_message_get_arguments(msg, "s", &mac_str))
+		return dbus_error_invalid_args(msg);
+
+	nrf24_str2mac(mac_str, &addr);
+
+	/* FIXME: Name is unknown */
+	device = device_create(adapter->path, &addr, "unknown", true);
+	if (!device)
+		return dbus_error_invalid_args(msg);
+
+	l_hashmap_insert(adapter->offline_list, &addr, device);
+
+	return l_dbus_message_new_method_return(msg);
+}
+
 static struct l_dbus_message *method_remove_device(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
@@ -565,6 +589,9 @@ static bool property_get_address(struct l_dbus *dbus,
 
 static void adapter_setup_interface(struct l_dbus_interface *interface)
 {
+
+	l_dbus_interface_method(interface, "AddDevice", 0,
+				method_add_device, "", "s", "mac");
 
 	l_dbus_interface_method(interface, "RemoveDevice", 0,
 				method_remove_device, "", "o", "path");
