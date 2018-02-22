@@ -19,8 +19,7 @@
  *
  */
 
-int proxy_start(void);
-void proxy_stop(void);
+typedef void (*proxy_removed_func_t) (uint64_t id);
 
-int proxy_create(uint32_t id);
-void proxy_remove(uint32_t id);
+int proxy_start(proxy_removed_func_t func);
+void proxy_stop(void);

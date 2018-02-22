@@ -21,7 +21,7 @@
 
 #define NF24_SERVICE			"br.org.cesar.knot.nrf"
 #define ADAPTER_INTERFACE		"br.org.cesar.nrf.Adapter1"
-#define DEVICE_INTERFACE		"br.org.cesar.nrf.Device1"
+#define DEVICE_INTERFACE		"org.bluez.Device1"
 
 int dbus_start(void);
 void dbus_stop(void);

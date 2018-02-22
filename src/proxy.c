@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#include <errno.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <ell/ell.h>
@@ -33,9 +34,11 @@
 #include "proxy.h"
 
 #define KNOT_DBUS_SERVICE		"br.org.cesar.knot"
+#define KNOT_DBUS_DEVICE		"br.org.cesar.knot.Device1"
 
 static unsigned int watch_id;
-struct l_dbus_client *client;
+static struct l_dbus_client *client;
+static proxy_removed_func_t removed_cb;
 
 static void service_appeared(struct l_dbus *dbus, void *user_data)
 {
@@ -52,21 +55,60 @@ static void added(struct l_dbus_proxy *proxy, void *user_data)
 	const char *interface = l_dbus_proxy_get_interface(proxy);
 	const char *path = l_dbus_proxy_get_path(proxy);
 
-	hal_log_info("proxy added: %s %s", path, interface);
+	if (strcmp(KNOT_DBUS_DEVICE, interface) != 0)
+		return;
 
-	/* Track all devices based on Id property */
+	/* Debug purpose only */
+	hal_log_info("proxy added: %s %s", path, interface);
 }
 
 static void removed(struct l_dbus_proxy *proxy, void *user_data)
 {
-	hal_log_info("proxy removed: %s %s",
-		     l_dbus_proxy_get_path(proxy),
-		     l_dbus_proxy_get_interface(proxy));
+	const char *interface = l_dbus_proxy_get_interface(proxy);
+	const char *path = l_dbus_proxy_get_path(proxy);
+
+	if (strcmp(KNOT_DBUS_DEVICE, interface) != 0)
+		return;
+
+	/* Debug purpose only */
+	hal_log_info("proxy removed: %s %s", path, interface);
 }
 
-
-int proxy_start(void)
+static void property_changed(struct l_dbus_proxy *proxy, const char *name,
+				struct l_dbus_message *msg, void *user_data)
 {
+	uint64_t id;
+	bool paired;
+
+	/* Track all devices based on Id property */
+
+	l_info("property changed: %s (%s %s)", name,
+					l_dbus_proxy_get_path(proxy),
+					l_dbus_proxy_get_interface(proxy));
+	if (strcmp(name, "Pair"))
+		return;
+
+	if (!l_dbus_proxy_get_property(proxy, "Id", "t", &id))
+		return;
+
+	if (!l_dbus_message_get_arguments(msg, "b", &paired))
+		return;
+
+	if (paired != false)
+		return;
+
+	hal_log_info("   Id: %"PRIu64 " Paired:%d", id, paired);
+	removed_cb(id);
+}
+
+int proxy_start(proxy_removed_func_t func)
+{
+
+	if (!func)
+		return -EINVAL;
+
+	removed_cb = func;
+
 	watch_id = l_dbus_add_service_watch(dbus_get_bus(), KNOT_DBUS_SERVICE,
 						service_appeared,
 						service_disappeared,
@@ -74,7 +116,7 @@ int proxy_start(void)
 
 	client = l_dbus_client_new(dbus_get_bus(), KNOT_DBUS_SERVICE, "/");
 	l_dbus_client_set_proxy_handlers(client, added,
-					 removed, NULL, NULL, NULL);
+					 removed, property_changed, NULL, NULL);
 
 	return 0;
 }
@@ -85,11 +127,3 @@ void proxy_stop(void)
 	l_dbus_remove_watch(dbus_get_bus(), watch_id);
 }
 
-int proxy_create(uint32_t id)
-{
-	return 0;
-}
-
-void proxy_remove(uint32_t id)
-{
-}
