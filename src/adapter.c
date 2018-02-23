@@ -608,7 +608,6 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 		hal_log_error("Can't add 'Address' property");
 }
 
-#if 0
 static void register_device(const char *mac, const char *name, void *user_data)
 {
 	struct nrf24_adapter *adapter = user_data;
@@ -625,7 +624,6 @@ static void register_device(const char *mac, const char *name, void *user_data)
 
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 }
-#endif
 
 static void proxy_removed(uint64_t id)
 {
@@ -705,7 +703,8 @@ int adapter_start(const char *host, const char *keys_pathname,
 	device_start();
 	proxy_start(proxy_removed);
 
-	/* TODO: Load & create/register stored devices */
+	storage_foreach_nrf24_keys(adapter.keys_pathname,
+				   register_device, &adapter);
 
 	return 0;
 }
