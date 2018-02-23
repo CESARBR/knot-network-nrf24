@@ -42,17 +42,22 @@ int manager_start(const char *file, const char *host, int port,
 {
 	int cfg_channel = 76, cfg_dbm = 0;
 	struct nrf24_mac mac = {.address.uint64 = 0};
-	char mac_str[24];
+	char *mac_str;
 
-	memset(mac_str, 0, sizeof(mac_str));
-	/* TODO: Verify radio configuration on storage file */
+	mac_str = storage_read_key_string(file, "Radio", "mac");
+	if (mac_str != NULL)
+		nrf24_str2mac(mac_str, &mac);
+	else
+		mac_str = l_new(char, 24);
 
 	/* Command line arguments have higher priority */
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		/* TODO: Store radio mac address*/
+		storage_write_key_string(file, "Radio", "mac", mac_str);
 	}
+
+	l_free(mac_str);
 
 	/*
 	 * Priority order: 1) command line 2) config file.
