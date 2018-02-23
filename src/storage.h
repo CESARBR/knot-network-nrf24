@@ -26,21 +26,21 @@ void storage_foreach_nrf24_keys(const char *pathname,
 				storage_foreach_func_t func, void *user_data);
 
 int storage_write_key_string(const char *pathname, const char *group,
-					const char *key, const char *value);
+			     const char *key, const char *value);
 
 char *storage_read_key_string(const char *pathname, const char *group,
-					const char *key);
+			      const char *key);
 
 int storage_write_key_int(const char *pathname, const char *group,
-					const char *key, int value);
+			  const char *key, int value);
 
 int storage_read_key_int(const char *pathname, const char *group,
-					const char *key, int *value);
+			 const char *key, int *value);
 
 int storage_write_key_uint64(const char *pathname, const char *group,
-					const char *key, uint64_t value);
+			     const char *key, uint64_t value);
 
 int storage_read_key_uint64(const char *pathname, const char *group,
-					const char *key, uint64_t *value);
+			    const char *key, uint64_t *value);
 
 int storage_remove_group(const char *pathname, const char *group);

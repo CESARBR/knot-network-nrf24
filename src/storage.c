@@ -32,23 +32,23 @@
 
 #include "storage.h"
 
-static bool settings_to_file(const char *pathname, struct l_settings *settings)
+static int settings_to_file(const char *pathname, struct l_settings *settings)
 {
 	char *res;
 	size_t res_len;
 	int fd;
-	int err = true;
+	int err = 0;
 
 	res = l_settings_to_data(settings, &res_len);
 
 	fd = open(pathname, O_WRONLY | O_TRUNC);
 	if (fd < 0){
-		err = false;
+		err = -errno;
 		goto failure;
 	}
 
 	write(fd, res, res_len);
-
+	close(fd);
 
 failure:
 	l_free(res);
@@ -58,54 +58,67 @@ failure:
 void storage_foreach_nrf24_keys(const char *pathname,
 				storage_foreach_func_t func, void *user_data)
 {
-	struct l_settings *settings;
-	int i;
+	struct l_settings *settings = l_settings_new();
 	char **groups;
 	char *name;
+	int i;
 
-	settings = l_settings_new();
-
-	l_settings_load_from_file(settings, pathname);
+	if (!l_settings_load_from_file(settings, pathname))
+		goto failure;
 
 	groups = l_settings_get_groups(settings);
 
 	for (i = 0; groups[i] != NULL; i++){
 		name = l_settings_get_string(settings, groups[i], "name");
 		func(groups[i], name, user_data);
+
+		l_free(name);
+		l_free(groups[i]);
 	}
 
+	l_free(groups);
+
+failure:
 	l_settings_free(settings);
 }
 
 int storage_write_key_string(const char *pathname, const char *group,
-			const char *key, const char *value)
+			     const char *key, const char *value)
 {
-	struct l_settings *settings;
-	settings = l_settings_new();
+	struct l_settings *settings = l_settings_new();
+	int ret = -EINVAL;
+	bool err;
 
-	l_settings_load_from_file(settings, pathname);
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
+		goto failure;
+	}
 
-	l_settings_set_string(settings, group, key, value);
+	err = l_settings_set_string(settings, group, key, value);
+	if (!err)
+		goto failure;
 
-	settings_to_file(pathname, settings);
+	ret = settings_to_file(pathname, settings);
 
+failure:
 	l_settings_free(settings);
-	return 0;
+	return ret;
 }
 
 char *storage_read_key_string(const char *pathname, const char *group,
-			const char *key)
+			      const char *key)
 {
-	struct l_settings *settings;
-	bool exist;
+	struct l_settings *settings = l_settings_new();
 	char *str = NULL;
+	bool err;
 
-	settings = l_settings_new();
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err)
+		goto failure;
 
-	l_settings_load_from_file(settings, pathname);
-
-	exist = l_settings_has_group(settings, group);
-	if (!exist)
+	err = l_settings_has_group(settings, group);
+	if (!err)
 		goto failure;
 
 	str = l_settings_get_string(settings, group, key);
@@ -116,95 +129,132 @@ failure:
 }
 
 int storage_write_key_int(const char *pathname, const char *group,
-			const char *key, int value)
+			  const char *key, int value)
 {
-	struct l_settings *settings;
-	settings = l_settings_new();
+	struct l_settings *settings = l_settings_new();
+	int ret = -EINVAL;
+	bool err;
 
-	l_settings_load_from_file(settings, pathname);
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
+		goto failure;
+	}
 
-	l_settings_set_int(settings, group, key, value);
+	err  = l_settings_set_int(settings, group, key, value);
+	if (!err)
+		goto failure;
 
-	settings_to_file(pathname, settings);
+	ret = settings_to_file(pathname, settings);
 
+failure:
 	l_settings_free(settings);
-	return 0;
+	return ret;
 }
 
 int storage_read_key_int(const char *pathname, const char *group,
-			const char *key, int *value)
+			 const char *key, int *value)
 {
-	struct l_settings *settings;
-	bool exist;
-	int err = -EINVAL;
+	struct l_settings *settings = l_settings_new();
+	int ret = 0;
+	bool err;
 
-	settings = l_settings_new();
-
-	l_settings_load_from_file(settings, pathname);
-
-	exist = l_settings_has_group(settings, group);
-	if (!exist)
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
 		goto failure;
+	}
 
-	l_settings_get_int(settings, group, key, value);
+	err = l_settings_has_group(settings, group);
+	if (!err){
+		ret = -EINVAL;
+		goto failure;
+	}
 
-	err = 0;
+	err = l_settings_get_int(settings, group, key, value);
+	if (!err){
+		ret = -EINVAL;
+		goto failure;
+	}
+
 failure:
 	l_settings_free(settings);
-	return err;
+	return ret;
 }
 
 int storage_write_key_uint64(const char *pathname, const char *group,
-			const char *key, uint64_t value)
+			     const char *key, uint64_t value)
 {
-	struct l_settings *settings;
-	settings = l_settings_new();
+	struct l_settings *settings = l_settings_new();
+	int ret = -EINVAL;
+	bool err;
 
-	l_settings_load_from_file(settings, pathname);
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
+		goto failure;
+	}
 
-	l_settings_set_uint64(settings, group, key, value);
+	err = l_settings_set_uint64(settings, group, key, value);
+	if (!err)
+		goto failure;
 
-	settings_to_file(pathname, settings);
+	ret = settings_to_file(pathname, settings);
 
+failure:
 	l_settings_free(settings);
-	return 0;
+	return ret;
 }
 
 int storage_read_key_uint64(const char *pathname, const char *group,
-			const char *key, uint64_t *value)
+			    const char *key, uint64_t *value)
 {
-	struct l_settings *settings;
-	bool exist;
-	int err = -EINVAL;
+	struct l_settings *settings = l_settings_new();
+	int ret = 0;
+	bool err;
 
-	settings = l_settings_new();
-
-	l_settings_load_from_file(settings, pathname);
-
-	exist = l_settings_has_group(settings, group);
-	if (!exist)
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
 		goto failure;
+	}
 
-	l_settings_get_uint64(settings, group, key, value);
+	err = l_settings_has_group(settings, group);
+	if (!err){
+		ret = -EINVAL;
+		goto failure;
+	}
 
-	err = 0;
+	err = l_settings_get_uint64(settings, group, key, value);
+	if (!err){
+		ret = -EINVAL;
+		goto failure;
+	}
+
 failure:
 	l_settings_free(settings);
-	return err;
+	return ret;
 }
 
 int storage_remove_group(const char *pathname, const char *group)
 {
-	struct l_settings *settings;
+	struct l_settings *settings = l_settings_new();
+	int ret = -EINVAL;
+	bool err;
 
-	settings = l_settings_new();
+	err = l_settings_load_from_file(settings, pathname);
+	if (!err){
+		ret = -ENOENT;
+		goto failure;
+	}
 
-	l_settings_load_from_file(settings, pathname);
+	err = l_settings_remove_group(settings, group);
+	if (!err)
+		goto failure;
 
-	l_settings_remove_group(settings, group);
+	ret = settings_to_file(pathname, settings);
 
-	settings_to_file(pathname, settings);
-
+failure:
 	l_settings_free(settings);
-	return 0;
+	return ret;
 }
