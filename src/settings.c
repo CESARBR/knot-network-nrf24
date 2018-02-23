@@ -29,8 +29,8 @@
 
 #include "settings.h"
 
-static const char *config_path = "/etc/knot/gatewayConfig.json";
-static const char *nodes_path = "/etc/knot/keys.json";
+static const char *config_path = "/etc/knot/nrf24-radio.conf";
+static const char *nodes_path = "/etc/knot/nrf24-keys.conf";
 static const char *host = NULL;
 static unsigned int port = 8081;
 static const char *spi = "/dev/spidev0.0";

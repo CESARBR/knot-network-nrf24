@@ -553,7 +553,7 @@ static struct l_dbus_message *method_remove_device(struct l_dbus *dbus,
 	if (!l_dbus_message_get_arguments(msg, "o", &path))
 		return dbus_error_invalid_args(msg);
 
-	/* TODO: unregister object & remove from keys.json */
+	/* TODO: unregister object & remove from nrf24-keys.conf */
 
 	return l_dbus_message_new_method_return(msg);
 }
