@@ -33,6 +33,16 @@ PKG_CHECK_MODULES(ELL, ell,
 AC_SUBST(ELL_CFLAGS)
 AC_SUBST(ELL_LIBS)
 
+if (test "$sysconfdir" = '${prefix}/etc'); then
+	knotconfigdir="${prefix}/etc/knot"
+else
+	knotconfigdir="${sysconfdir}/knot"
+fi
+
+AC_DEFINE_UNQUOTED(KNOTCONFIGDIR, "${knotconfigdir}",
+			[Directory for the KNoT configuration files])
+AC_SUBST(KNOTCONFIGDIR, "${knotconfigdir}")
+
 AC_ARG_ENABLE(optimization, AC_HELP_STRING([--disable-optimization],
 			[disable code optimization through compiler]), [
 	if (test "${enableval}" = "no"); then

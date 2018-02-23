@@ -6,6 +6,9 @@ AM_LDFLAGS = $(BUILD_LDFLAGS)
 dbusdir = @DBUS_CONFDIR@/dbus-1/system.d
 dbus_DATA = src/nrf24.conf
 
+knotconfigdir = @KNOTCONFIGDIR@
+knotconfig_DATA = src/nrf24-keys.conf src/nrf24-radio.conf
+
 bin_PROGRAMS = src/nrfd
 noinst_PROGRAMS =
 
