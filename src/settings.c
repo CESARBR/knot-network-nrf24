@@ -92,7 +92,7 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 		case 'p':
 			settings->port = atoi(optarg);
 			break;
-		case 'i':
+		case 's':
 			settings->spi = optarg;
 			break;
 		case 'C':
