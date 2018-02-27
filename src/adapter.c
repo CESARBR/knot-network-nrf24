@@ -85,6 +85,14 @@ static bool pipe_match_addr(const void *a, const void *b)
 	return (ret ? false : true);
 }
 
+static bool pipe_match_rxsock(const void *a, const void *b)
+{
+	const struct idle_pipe *pipe = a;
+	const int *rxsock = b;
+
+	return (pipe->rxsock == *rxsock ? true : false);
+}
+
 static unsigned int nrf24_mac_hash(const void *p)
 {
 	const struct nrf24_mac *addr = p;
@@ -519,6 +527,88 @@ static void radio_stop(void)
 	hal_comm_deinit();
 }
 
+static void store_device(const char *addr, uint64_t id, const char *name)
+{
+	storage_write_key_string(adapter.keys_pathname, addr, "name", name);
+	storage_write_key_uint64(adapter.keys_pathname, addr, "id", id);
+}
+
+static void remove_stored_device(const char *addr)
+{
+	storage_remove_group(adapter.keys_pathname, addr);
+}
+
+static bool offline_foreach(const void *key, void *value, void *user_data)
+{
+	const struct nrf24_mac *addr = key;
+	struct nrf24_device *device = value;
+	const char *path = user_data;
+	char mac_str[24];
+
+	if (strcmp(path, device_get_path(device)))
+		return false;
+
+	nrf24_mac2str(addr, mac_str);
+
+	remove_stored_device(mac_str);
+
+	device_destroy(device);
+
+	return true;
+}
+
+static bool paging_foreach(const void *key, void *value, void *user_data)
+{
+	const struct nrf24_mac *addr = key;
+	struct nrf24_device *device = value;
+	const char *path = user_data;
+	struct idle_pipe *pipe;
+	char mac_str[24];
+
+	if (strcmp(path, device_get_path(device)))
+		return false;
+
+	pipe = l_queue_remove_if(adapter.idle_list, pipe_match_addr, addr);
+	if (!pipe)
+		return false;
+
+	nrf24_mac2str(addr, mac_str);
+
+	remove_stored_device(mac_str);
+
+	l_idle_oneshot(remove_idle_oneshot, pipe->idle, NULL);
+
+	device_destroy(device);
+
+	return true;
+}
+
+static bool online_foreach(const void *key, void *value, void *user_data)
+{
+	const int *rxsock = key;
+	struct nrf24_device *device = value;
+	const char *path = user_data;
+	struct idle_pipe *pipe;
+	char mac_str[24];
+
+	if (strcmp(path, device_get_path(device)))
+		return false;
+
+	pipe = l_queue_remove_if(adapter.idle_list, pipe_match_rxsock, rxsock);
+	if (!pipe)
+		return false;
+
+	nrf24_mac2str(&pipe->addr, mac_str);
+
+	remove_stored_device(mac_str);
+
+	l_idle_oneshot(remove_idle_oneshot, pipe->idle, NULL);
+
+	device_destroy(device);
+
+	return true;
+}
+
 static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
@@ -539,6 +629,8 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	if (!device)
 		return dbus_error_invalid_args(msg);
 
+	store_device(mac_str, id, "unknown");
+
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 
 	return l_dbus_message_new_method_return(msg);
@@ -548,13 +640,27 @@ static struct l_dbus_message *method_remove_device(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
 {
-	const char *path;
+	struct nrf24_adapter *adapter = user_data;
+	char *path;
 
 	if (!l_dbus_message_get_arguments(msg, "o", &path))
 		return dbus_error_invalid_args(msg);
 
-	/* TODO: unregister object & remove from nrf24-keys.conf */
+	if (l_hashmap_foreach_remove(adapter->offline_list,
+				     offline_foreach, path))
+		goto done;
 
+	if (l_hashmap_foreach_remove(adapter->paging_list,
+				     paging_foreach, path))
+		goto done;
+
+	if (l_hashmap_foreach_remove(adapter->online_list,
+				     online_foreach, path))
+		goto done;
+	else
+		return dbus_error_invalid_args(msg);
+
+done:
 	return l_dbus_message_new_method_return(msg);
 }
 

@@ -283,6 +283,11 @@ void device_get_address(const struct nrf24_device *device,
 	memcpy(addr, &device->addr, sizeof(*addr));
 }
 
+const char *device_get_path(const struct nrf24_device *device)
+{
+	return device->dpath;
+}
+
 bool device_is_paired(const struct nrf24_device *device)
 {
 	return device->paired;
