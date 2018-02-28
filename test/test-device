@@ -24,10 +24,10 @@ if not options.path:
 
 path = options.path
 props = dbus.Interface(bus.get_object("br.org.cesar.knot.nrf", path), "org.freedesktop.DBus.Properties")
-device = dbus.Interface(bus.get_object("br.org.cesar.knot.nrf", path), "br.org.cesar.nrf.Device1")
+device = dbus.Interface(bus.get_object("br.org.cesar.knot.nrf", path), "br.org.cesar.knot.nrf.Device1")
 
 if (cmd == "info"):
-	print (props.GetAll("br.org.cesar.nrf.Device1"))
+	print (props.GetAll("br.org.cesar.knot.nrf.Device1"))
 	sys.exit(0)
 
 if (cmd == "pair"):
