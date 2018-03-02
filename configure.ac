@@ -33,6 +33,12 @@ PKG_CHECK_MODULES(ELL, ell,
 AC_SUBST(ELL_CFLAGS)
 AC_SUBST(ELL_LIBS)
 
+PKG_CHECK_MODULES(KNOTHAL, hal,
+  [AC_DEFINE([HAVE_KNOTHAL],[1],[Use KNOTHAL])],
+  [AC_MSG_ERROR("KNoT-HAL missing")])
+AC_SUBST(KNOTHAL_CFLAGS)
+AC_SUBST(KNOTHAL_LIBS)
+
 if (test "$sysconfdir" = '${prefix}/etc'); then
 	knotconfigdir="${prefix}/etc/knot"
 else
