@@ -47,7 +47,8 @@ static int settings_to_file(const char *pathname, struct l_settings *settings)
 		goto failure;
 	}
 
-	write(fd, res, res_len);
+	if (write(fd, res, res_len) < 0)
+		err = -errno;
 	close(fd);
 
 failure:
