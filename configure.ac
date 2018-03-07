@@ -39,6 +39,19 @@ else
 	knotconfigdir="${sysconfdir}/knot"
 fi
 
+AC_ARG_WITH([dbusconfdir], AC_HELP_STRING([--with-dbusconfdir=DIR],
+                                [path to D-Bus configuration directory]),
+                                        [path_dbusconfdir=${withval}])
+if (test -z "${path_dbusconfdir}"); then
+        AC_MSG_CHECKING([D-Bus configuration directory])
+        path_dbusconfdir="`$PKG_CONFIG --variable=sysconfdir dbus-1`"
+        if (test -z "${path_dbusconfdir}"); then
+                AC_MSG_ERROR([D-Bus configuration directory is required])
+        fi
+        AC_MSG_RESULT([${path_dbusconfdir}])
+fi
+AC_SUBST(DBUS_CONFDIR, [${path_dbusconfdir}])
+
 AC_DEFINE_UNQUOTED(KNOTCONFIGDIR, "${knotconfigdir}",
 			[Directory for the KNoT configuration files])
 AC_SUBST(KNOTCONFIGDIR, "${knotconfigdir}")
