@@ -1,11 +1,11 @@
 nRF24 D-Bus API description
 **************************
 
-Service 	org.cesar.nrf
+Service 	br.org.cesar.knot.nrf
 
 Adapter hierarchy
 =================
-Interface 	org.cesar.nrf.Adapter1
+Interface 	br.org.cesar.knot.nrf.Adapter1
 Object path 	[variable prefix]/{nrf0, nrf1, ...}
 
 Methods 	void RemoveDevice(object device)
@@ -13,7 +13,7 @@ Methods 	void RemoveDevice(object device)
 		Removes a remote nRF24 device including its local stored
 		data such as keys, and properties.
 
-		Returns: org.cesar.nrf.Error.InvalidArguments
+		Returns: br.org.cesar.knot.nrf.Error.InvalidArguments
 
 
 		void AddDevice(string mac)
@@ -21,7 +21,7 @@ Methods 	void RemoveDevice(object device)
 		Adds a new nRF24 device. Allows to create a new paired device
 		from external out-of-band sources.
 
-		Returns: org.cesar.nrf.Error.InvalidArguments
+		Returns: br.org.cesar.knot.nrf.Error.InvalidArguments
 
 
 		void StartScanning(dict filter)
@@ -31,15 +31,15 @@ Methods 	void RemoveDevice(object device)
 		created. Caller must use StopScanning() to release the
 		session acquired.
 
-		Returns: org.cesar.nrf.Error.NotReady
+		Returns: br.org.cesar.knot.nrf.Error.NotReady
 
 
 		void StopScanning(void)
 
 		This method releases the device scanning session.
 
-		Returns: org.cesar.nrf.Error.NotReady
-			org.cesar.nrf.Error.NotAutorized
+		Returns: br.org.cesar.knot.nrf.Error.NotReady
+			br.org.cesar.knot.nrf.Error.NotAutorized
 
 
 Properties 	string Address [readonly]
@@ -56,7 +56,7 @@ Properties 	string Address [readonly]
 
 Device hierarchy
 ================
-Interface 	org.cesar.nrf.Device1
+Interface 	br.org.cesar.knot.nrf.Device1
 Object path 	[variable prefix]/{nrf0, nrf1, ...}/dev_xx_xx_xx_xx_xx_xx_xx_xx
 
 
@@ -66,8 +66,8 @@ Methods 	void Pair(dict properties)
 		properties: "PublicKey", "PrivateKey". Keys are optional,
 		binding without keys results on open physical channel.
 
-		Returns: org.cesar.nrf.Error.AlreadyExists
-			org.cesar.nrf.Error.InvalidArguments
+		Returns: br.org.cesar.knot.nrf.Error.AlreadyExists
+			br.org.cesar.knot.nrf.Error.InvalidArguments
 
 
 Properties 	string Address [readonly]
