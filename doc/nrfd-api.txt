@@ -8,15 +8,7 @@ Adapter hierarchy
 Interface 	br.org.cesar.knot.nrf.Adapter1
 Object path 	[variable prefix]/{nrf0, nrf1, ...}
 
-Methods 	void RemoveDevice(object device)
-
-		Removes a remote nRF24 device including its local stored
-		data such as keys, and properties.
-
-		Returns: br.org.cesar.knot.nrf.Error.InvalidArguments
-
-
-		void AddDevice(string mac)
+Methods 	void AddDevice(string mac)
 
 		Adds a new nRF24 device. Allows to create a new paired device
 		from external out-of-band sources.
@@ -65,9 +57,18 @@ Methods 	void Pair(dict properties)
 		This method allows to create persistent association. Allowed
 		properties: "PublicKey", "PrivateKey". Keys are optional,
 		binding without keys results on open physical channel.
+		For nRF24, enables automatic link establishment.
 
 		Returns: br.org.cesar.knot.nrf.Error.AlreadyExists
 			br.org.cesar.knot.nrf.Error.InvalidArguments
+
+		void Forget()
+
+		This method removes all meta-data associated to this device, and
+		automatically disconnects from it. Removes local stored data such
+		as keys, and properties.
+
+		Returns: br.org.cesar.knot.nrf.Error.InProgress
 
 
 Properties 	string Address [readonly]
@@ -101,7 +102,8 @@ Properties 	string Address [readonly]
 
 		boolean Paired [readonly]
 
-		Indicates if the remote is paired.
+		Indicates if the remote is paired. Emitted when Pair() or Forget()
+		gets called.
 
 
 		object Adapter [readonly]
