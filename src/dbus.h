@@ -29,3 +29,4 @@ void dbus_stop(void);
 struct l_dbus *dbus_get_bus(void);
 
 struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg);
+struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg);

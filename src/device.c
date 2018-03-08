@@ -44,6 +44,8 @@ struct nrf24_device {
 	char *apath;		/* Adapter object path */
 	bool paired;
 	bool connected;
+	device_forget_cb_t forget_cb;
+	void *user_data;
 };
 
 static void device_free(struct nrf24_device *device)
@@ -54,29 +56,53 @@ static void device_free(struct nrf24_device *device)
 	l_free(device);
 }
 
+static void emit_signal_paired(const char *path, bool paired)
+{
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   path,
+					   DEVICE_INTERFACE,
+					   "Paired");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 'b', &paired);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
+}
+
 static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
 {
 	struct nrf24_device *device = user_data;
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
 
 	if (device->paired)
 		return l_dbus_message_new_method_return(msg);
 
 	device->paired = true;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->dpath,
-					   DEVICE_INTERFACE,
-					   "Paired");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &device->paired);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
+	emit_signal_paired(device->dpath, device->paired);
 
-	l_dbus_send(dbus_get_bus(), signal);
+	return l_dbus_message_new_method_return(msg);
+}
+
+static struct l_dbus_message *method_forget(struct l_dbus *dbus,
+						struct l_dbus_message *msg,
+						void *user_data)
+{
+	struct nrf24_device *device = user_data;
+
+	if (!device->paired)
+		return dbus_error_not_available(msg);
+
+	device->paired = false;
+
+	emit_signal_paired(device->dpath, device->paired);
+
+	device->forget_cb(device, device->user_data);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -174,6 +200,9 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 	l_dbus_interface_method(interface, "Pair", 0,
 				method_pair, "", "", "");
 
+	l_dbus_interface_method(interface, "Forget", 0,
+				method_forget, "", "", "");
+
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       property_get_name,
 				       NULL))
@@ -207,7 +236,9 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
-				   uint64_t id, const char *name, bool paired)
+				   uint64_t id, const char *name, bool paired,
+				   device_forget_cb_t forget_cb,
+				   void *user_data)
 {
 	struct nrf24_device *device;
 	char device_path[24 + strlen(adapter_path) + 1];
@@ -220,6 +251,8 @@ struct nrf24_device *device_create(const char *adapter_path,
 	device->paired = paired;
 	device->connected = false;
 	device->id = id;
+	device->forget_cb = forget_cb;
+	device->user_data = user_data;
 
 	memset(mac_str, 0, sizeof(mac_str));
 

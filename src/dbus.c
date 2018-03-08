@@ -33,6 +33,11 @@ struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg)
 					"Argument type is wrong");
 }
 
+struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg)
+{
+	return l_dbus_message_new_error(msg, NF24_SERVICE ".NotAvailable",
+					"Operation not available");
+}
 
 static void dbus_disconnect_callback(void *user_data)
 {

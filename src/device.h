@@ -20,6 +20,8 @@
  */
 struct nrf24_device;
 
+typedef void (*device_forget_cb_t) (struct nrf24_device *device,
+					void *user_data);
 int device_start(void);
 void device_stop(void);
 
@@ -30,5 +32,7 @@ bool device_is_paired(const struct nrf24_device *device);
 void device_set_connected(struct nrf24_device *device, bool connected);
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
-				   uint64_t id, const char *name, bool paired);
+				   uint64_t id, const char *name, bool paired,
+				   device_forget_cb_t forget_cb,
+				   void *user_data);
 void device_destroy(struct nrf24_device *device);
