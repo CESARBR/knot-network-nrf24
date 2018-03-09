@@ -38,6 +38,7 @@
 
 struct nrf24_device {
 	struct nrf24_mac addr;
+	int refs;
 	uint64_t id;
 	char *name;
 	char *dpath;		/* Device object path */
@@ -54,6 +55,27 @@ static void device_free(struct nrf24_device *device)
 	l_free(device->dpath);
 	l_free(device->apath);
 	l_free(device);
+}
+
+static struct nrf24_device *device_ref(struct nrf24_device *device)
+{
+	if (unlikely(!device))
+		return NULL;
+
+	__sync_fetch_and_add(&device->refs, 1);
+
+	return device;
+}
+
+static void device_unref(struct nrf24_device *device)
+{
+	if (unlikely(!device))
+		return;
+
+	if (__sync_sub_and_fetch(&device->refs, 1))
+		return;
+
+	device_free(device);
 }
 
 static void emit_signal_paired(const char *path, bool paired)
@@ -287,7 +309,7 @@ struct nrf24_device *device_create(const char *adapter_path,
 	    goto prop_reg_fail;
 	}
 
-	return device;
+	return device_ref(device);
 
 prop_reg_fail:
 	l_dbus_object_remove_interface(dbus_get_bus(),
@@ -307,7 +329,7 @@ void device_destroy(struct nrf24_device *device)
 	l_dbus_object_remove_interface(dbus_get_bus(),
 				       device->dpath,
 				       L_DBUS_INTERFACE_PROPERTIES);
-	device_free(device);
+	device_unref(device);
 }
 
 void device_get_address(const struct nrf24_device *device,
