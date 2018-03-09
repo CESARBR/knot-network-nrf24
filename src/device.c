@@ -312,10 +312,9 @@ struct nrf24_device *device_create(const char *adapter_path,
 	device->apath = l_strdup(adapter_path);
 	device->dpath = l_strdup(device_path);
 
-
 	if (!l_dbus_register_object(dbus_get_bus(),
 				    device_path,
-				    device,
+				    device_ref(device),
 				    (l_dbus_destroy_func_t) device_unref,
 				    DEVICE_INTERFACE, device,
 				    L_DBUS_INTERFACE_PROPERTIES, device,
