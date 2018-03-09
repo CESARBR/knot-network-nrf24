@@ -27,6 +27,13 @@
 
 static struct l_dbus *g_dbus = NULL;
 
+struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
+						 const char *emsg)
+{
+	return l_dbus_message_new_error(msg, NF24_SERVICE ".AlreadyExists",
+					emsg);
+}
+
 struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg)
 {
 	return l_dbus_message_new_error(msg, NF24_SERVICE ".InvalidArgs",
