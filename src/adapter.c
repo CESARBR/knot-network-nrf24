@@ -310,38 +310,12 @@ done:
 	}
 }
 
-static void remove_stored_device(const char *addr)
-{
-	storage_remove_group(adapter.keys_pathname, addr);
-}
-
-static bool offline_foreach(const void *key, void *value, void *user_data)
-{
-	const struct nrf24_mac *addr = key;
-	struct nrf24_device *device1 = value;
-	struct nrf24_device *device2 = user_data;
-	char mac_str[24];
-
-
-	if (device1 != device2)
-		return false;
-
-	nrf24_mac2str(addr, mac_str);
-
-	remove_stored_device(mac_str);
-
-	device_destroy(device1);
-
-	return true;
-}
-
 static bool paging_foreach(const void *key, void *value, void *user_data)
 {
 	const struct nrf24_mac *addr = key;
 	struct nrf24_device *device1 = value;
 	struct nrf24_device *device2 = user_data;
 	struct idle_pipe *pipe;
-	char mac_str[24];
 
 	if (device1 != device2)
 		return false;
@@ -350,13 +324,7 @@ static bool paging_foreach(const void *key, void *value, void *user_data)
 	if (!pipe)
 		return false;
 
-	nrf24_mac2str(addr, mac_str);
-
-	remove_stored_device(mac_str);
-
 	l_idle_oneshot(remove_pipe_oneshot, pipe->idle, NULL);
-
-	device_destroy(device1);
 
 	return true;
 }
@@ -367,7 +335,6 @@ static bool online_foreach(const void *key, void *value, void *user_data)
 	struct nrf24_device *device1 = value;
 	struct nrf24_device *device2 = user_data;
 	struct idle_pipe *pipe;
-	char mac_str[24];
 
 	if (device1 != device2)
 		return false;
@@ -376,32 +343,40 @@ static bool online_foreach(const void *key, void *value, void *user_data)
 	if (!pipe)
 		return false;
 
-	nrf24_mac2str(&pipe->addr, mac_str);
-
-	remove_stored_device(mac_str);
-
 	l_idle_oneshot(remove_pipe_oneshot, pipe->idle, NULL);
 
-	device_destroy(device1);
-
 	return true;
+}
+
+static void remove_device_oneshot(void *user_data)
+{
+	struct nrf24_device *device = user_data;
+	/*
+	 * Never call at the same loop
+	 * FIXME: Find better approach. Device object
+	 * should not be unregistered at the same loop.
+	 */
+	device_destroy(device);
 }
 
 static void forget_cb(struct nrf24_device *device, void *user_data)
 {
 	struct nrf24_adapter *adapter = user_data;
+	struct nrf24_mac addr;
+	char mac_str[24];
 
-	if (l_hashmap_foreach_remove(adapter->offline_list,
-				     offline_foreach, device))
-		return;
+	device_get_address(device, &addr);
 
-	if (l_hashmap_foreach_remove(adapter->paging_list,
-				     paging_foreach, device))
-		return;
+	if (!l_hashmap_remove(adapter->offline_list, &addr))
+		if (!l_hashmap_foreach_remove(adapter->paging_list,
+					      paging_foreach, device))
+			if (!l_hashmap_foreach_remove(adapter->online_list,
+						      online_foreach, device))
+				return;
 
-	if (l_hashmap_foreach_remove(adapter->online_list,
-				     online_foreach, device))
-		return;
+	nrf24_mac2str(&addr, mac_str);
+	storage_remove_group(adapter->keys_pathname, mac_str);
+	l_idle_oneshot(remove_device_oneshot, device, NULL);
 }
 
 static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
