@@ -8,7 +8,7 @@ Adapter hierarchy
 Interface 	br.org.cesar.knot.nrf.Adapter1
 Object path 	[variable prefix]/{nrf0, nrf1, ...}
 
-Methods 	void AddDevice(string mac)
+Methods 	void AddDevice(dict device)
 
 		Adds a new nRF24 device. Allows to create a new paired device
 		from external out-of-band sources.

@@ -607,24 +607,42 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
 {
+	struct l_dbus_message_iter dict;
+	struct l_dbus_message_iter value;
 	struct nrf24_adapter *adapter = user_data;
 	struct nrf24_device *device;
 	struct nrf24_mac addr;
-	const char *mac_str;
-	uint64_t id = UINT64_MAX; /* FIXME: get from dict */
+	const char *mac_str = NULL;
+	const char *name = NULL;
+	char *key;
+	uint64_t id = UINT64_MAX;
 
-	if (!l_dbus_message_get_arguments(msg, "s", &mac_str))
+	if (!l_dbus_message_get_arguments(msg, "a{sv}", &dict))
 		return dbus_error_invalid_args(msg);
 
-	nrf24_str2mac(mac_str, &addr);
+	while (l_dbus_message_iter_next_entry(&dict, &key, &value)) {
+		if (strcmp(key, "Address") == 0)
+			l_dbus_message_iter_next_entry(&value, &mac_str);
+		else if (strcmp(key, "Name") == 0)
+			l_dbus_message_iter_next_entry(&value, &name);
+		else if (strcmp(key, "Id") == 0)
+			l_dbus_message_iter_next_entry(&value, &id);
+		else
+			return dbus_error_invalid_args(msg);
+	}
 
-	/* FIXME: Name is unknown */
-	device = device_create(adapter->path, &addr, id, "unknown", true,
+	if (!mac_str || !name || id == UINT64_MAX)
+		return dbus_error_invalid_args(msg);
+
+	if (nrf24_str2mac(mac_str, &addr) != 0)
+		return dbus_error_invalid_args(msg);
+
+	device = device_create(adapter->path, &addr, id, name, true,
 			       forget_cb, adapter);
 	if (!device)
 		return dbus_error_invalid_args(msg);
 
-	store_device(mac_str, id, "unknown");
+	store_device(mac_str, id, name);
 
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 
@@ -665,7 +683,7 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 {
 
 	l_dbus_interface_method(interface, "AddDevice", 0,
-				method_add_device, "", "s", "mac");
+				method_add_device, "", "a{sv}", "dict");
 
 	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
 				       property_get_powered,
