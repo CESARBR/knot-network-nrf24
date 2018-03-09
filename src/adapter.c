@@ -656,34 +656,6 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	return l_dbus_message_new_method_return(msg);
 }
 
-static struct l_dbus_message *method_remove_device(struct l_dbus *dbus,
-						struct l_dbus_message *msg,
-						void *user_data)
-{
-	struct nrf24_adapter *adapter = user_data;
-	char *path;
-
-	if (!l_dbus_message_get_arguments(msg, "o", &path))
-		return dbus_error_invalid_args(msg);
-
-	if (l_hashmap_foreach_remove(adapter->offline_list,
-				     offline_foreach, path))
-		goto done;
-
-	if (l_hashmap_foreach_remove(adapter->paging_list,
-				     paging_foreach, path))
-		goto done;
-
-	if (l_hashmap_foreach_remove(adapter->online_list,
-				     online_foreach, path))
-		goto done;
-	else
-		return dbus_error_invalid_args(msg);
-
-done:
-	return l_dbus_message_new_method_return(msg);
-}
-
 static bool property_get_powered(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
@@ -719,9 +691,6 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 
 	l_dbus_interface_method(interface, "AddDevice", 0,
 				method_add_device, "", "s", "mac");
-
-	l_dbus_interface_method(interface, "RemoveDevice", 0,
-				method_remove_device, "", "o", "path");
 
 	if (!l_dbus_interface_property(interface, "Powered", 0, "b",
 				       property_get_powered,
