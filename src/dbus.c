@@ -30,19 +30,19 @@ static struct l_dbus *g_dbus = NULL;
 struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
 						 const char *emsg)
 {
-	return l_dbus_message_new_error(msg, NF24_SERVICE ".AlreadyExists",
+	return l_dbus_message_new_error(msg, NRF24_SERVICE ".AlreadyExists",
 					emsg);
 }
 
 struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg)
 {
-	return l_dbus_message_new_error(msg, NF24_SERVICE ".InvalidArgs",
+	return l_dbus_message_new_error(msg, NRF24_SERVICE ".InvalidArgs",
 					"Argument type is wrong");
 }
 
 struct l_dbus_message *dbus_error_not_available(struct l_dbus_message *msg)
 {
-	return l_dbus_message_new_error(msg, NF24_SERVICE ".NotAvailable",
+	return l_dbus_message_new_error(msg, NRF24_SERVICE ".NotAvailable",
 					"Operation not available");
 }
 
@@ -62,7 +62,7 @@ static void dbus_request_name_callback(struct l_dbus *dbus, bool success,
 
 static void dbus_ready_callback(void *user_data)
 {
-	l_dbus_name_acquire(g_dbus, NF24_SERVICE, false, false, true,
+	l_dbus_name_acquire(g_dbus, NRF24_SERVICE, false, false, true,
 			    dbus_request_name_callback, NULL);
 
 	if (!l_dbus_object_manager_enable(g_dbus))

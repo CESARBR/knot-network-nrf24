@@ -19,7 +19,7 @@
  *
  */
 
-#define NF24_SERVICE			"br.org.cesar.knot.nrf"
+#define NRF24_SERVICE			"br.org.cesar.knot.nrf"
 #define ADAPTER_INTERFACE		"br.org.cesar.knot.nrf.Adapter1"
 #define DEVICE_INTERFACE		"br.org.cesar.knot.nrf.Device1"
 
