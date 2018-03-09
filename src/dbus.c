@@ -34,6 +34,12 @@ struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
 					emsg);
 }
 
+struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg)
+{
+	return l_dbus_message_new_error(msg, NRF24_SERVICE ".InProgress",
+					"Operation already in progress");
+}
+
 struct l_dbus_message *dbus_error_invalid_args( struct l_dbus_message *msg)
 {
 	return l_dbus_message_new_error(msg, NRF24_SERVICE ".InvalidArgs",

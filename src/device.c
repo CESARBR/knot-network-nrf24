@@ -47,10 +47,14 @@ struct nrf24_device {
 	bool connected;
 	device_forget_cb_t forget_cb;
 	void *user_data;
+	struct l_dbus_message *msg;
 };
 
 static void device_free(struct nrf24_device *device)
 {
+	if (device->msg)
+		l_dbus_message_unref(device->msg);
+
 	l_free(device->name);
 	l_free(device->dpath);
 	l_free(device->apath);
@@ -104,9 +108,17 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	if (device->paired)
 		return dbus_error_already_exists(msg, "Already paired");
 
+	if (device->msg)
+		return dbus_error_busy(msg);
+
+	device->msg = l_dbus_message_ref(msg);
 	device->paired = true;
 
 	emit_signal_paired(device->dpath, device->paired);
+
+	/* TODO: Pair() will be asynchronous ... */
+	l_dbus_message_unref(device->msg);
+	device->msg = NULL;
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -120,11 +132,19 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	if (!device->paired)
 		return dbus_error_not_available(msg);
 
+	if (device->msg)
+		return dbus_error_busy(msg);
+
+	device->msg = l_dbus_message_ref(msg);
 	device->paired = false;
 
 	emit_signal_paired(device->dpath, device->paired);
 
 	device->forget_cb(device, device->user_data);
+
+	/* TODO: Forget() will be asynchronous ... */
+	l_dbus_message_unref(device->msg);
+	device->msg = NULL;
 
 	return l_dbus_message_new_method_return(msg);
 }
