@@ -291,30 +291,19 @@ struct nrf24_device *device_create(const char *adapter_path,
 
 	device->apath = l_strdup(adapter_path);
 	device->dpath = l_strdup(device_path);
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 device_path,
-					 DEVICE_INTERFACE,
-					 device)) {
-	    hal_log_error("dbus: unable to add %s to %s",
-			  DEVICE_INTERFACE, device_path);
-	    goto dev_reg_fail;
-	}
 
-	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 device_path,
-					 L_DBUS_INTERFACE_PROPERTIES,
-					 device)) {
-	    hal_log_error("dbus: unable to add %s to %s",
-			  L_DBUS_INTERFACE_PROPERTIES, device_path);
-	    goto prop_reg_fail;
-	}
+
+	if (!l_dbus_register_object(dbus_get_bus(),
+				    device_path,
+				    device,
+				    (l_dbus_destroy_func_t) device_unref,
+				    DEVICE_INTERFACE, device,
+				    L_DBUS_INTERFACE_PROPERTIES, device,
+				    NULL))
+		goto dev_reg_fail;
 
 	return device_ref(device);
 
-prop_reg_fail:
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->dpath,
-				       DEVICE_INTERFACE);
 dev_reg_fail:
 	device_free(device);
 
@@ -323,12 +312,8 @@ dev_reg_fail:
 
 void device_destroy(struct nrf24_device *device)
 {
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->dpath,
-				       DEVICE_INTERFACE);
-	l_dbus_object_remove_interface(dbus_get_bus(),
-				       device->dpath,
-				       L_DBUS_INTERFACE_PROPERTIES);
+	l_dbus_unregister_object(dbus_get_bus(), device->dpath);
+
 	device_unref(device);
 }
 
