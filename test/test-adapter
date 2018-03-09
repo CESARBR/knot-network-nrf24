@@ -48,6 +48,21 @@ if (cmd == "powered"):
 
 	sys.exit(0)
 
+if (cmd == "add"):
+        print ("Adding device:")
+        print ("  Address:  %s" % args[1])
+        print ("  Name:  %s" % args[2])
+        print ("  Id:  %s" % args[3])
+        mac_addr = dbus.String(args[1])
+        name = dbus.String(args[2])
+        device_id = dbus.UInt64(args[3])
+        device_dict = dict()
+        device_dict.update({"Address": mac_addr})
+        device_dict.update({"Name": name})
+        device_dict.update({"Id": device_id})
+        dbus_dict = dbus.Dictionary(device_dict, signature='sv')
+        print (adapter.AddDevice(dbus_dict))
+
 if (cmd == "remove"):
 	print ("Removing device %s" % args[1])
 	devpath = dbus.ObjectPath(args[1])
