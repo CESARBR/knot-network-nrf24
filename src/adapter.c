@@ -42,7 +42,6 @@
 
 #include "dbus.h"
 #include "storage.h"
-#include "proxy.h"
 #include "device.h"
 #include "adapter.h"
 
@@ -714,19 +713,6 @@ static void register_device(const char *mac, const char *name, void *user_data)
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 }
 
-static void proxy_removed(uint64_t id)
-{
-	/*
-	 * Device removed from cloud. Any client(Android, Node, ...), including
-	 * the gateway (WEB-UI) may remove a device from the cloud service.
-	 * TODO: Define if a boolean property (eg: Device 'Paired') at the cloud is
-	 * enough to identify such scenario or if all device specify data should
-	 * be removed from the database.
-	 */
-
-	hal_log_info("Device removed: %"PRIu64, id);
-}
-
 int adapter_start(const char *host, const char *keys_pathname,
 		  uint8_t channel, int port,
 		  const struct nrf24_mac *mac)
@@ -790,7 +776,6 @@ int adapter_start(const char *host, const char *keys_pathname,
 
 	/* Register device interface */
 	device_start();
-	proxy_start(proxy_removed);
 
 	storage_foreach_nrf24_keys(adapter.keys_pathname,
 				   register_device, &adapter);
@@ -809,7 +794,6 @@ void adapter_stop(void)
 	l_free(adapter.keys_pathname);
 	l_free(adapter.path);
 
-	proxy_stop();
 	device_stop();
 
 	l_queue_destroy(adapter.idle_list, pipe_destroy);

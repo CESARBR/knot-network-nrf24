@@ -17,7 +17,6 @@ src_nrfd_SOURCES = src/main.c \
 		   src/manager.h src/manager.c \
 		   src/adapter.h src/adapter.c \
 		   src/device.h src/device.c \
-		   src/proxy.h src/proxy.c \
 		   src/storage.h src/storage.c \
 		   src/dbus.h src/dbus.c
 
