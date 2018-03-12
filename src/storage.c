@@ -42,7 +42,7 @@ static int settings_to_file(const char *pathname, struct l_settings *settings)
 	res = l_settings_to_data(settings, &res_len);
 
 	fd = open(pathname, O_WRONLY | O_TRUNC);
-	if (fd < 0){
+	if (fd < 0) {
 		err = -errno;
 		goto failure;
 	}
@@ -70,7 +70,7 @@ void storage_foreach_nrf24_keys(const char *pathname,
 
 	groups = l_settings_get_groups(settings);
 
-	for (i = 0; groups[i] != NULL; i++){
+	for (i = 0; groups[i] != NULL; i++) {
 		if (!l_settings_get_uint64(settings, groups[i], "Id", &id))
 			continue;
 
@@ -98,7 +98,7 @@ int storage_write_key_string(const char *pathname, const char *group,
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
@@ -144,7 +144,7 @@ int storage_write_key_int(const char *pathname, const char *group,
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
@@ -168,19 +168,19 @@ int storage_read_key_int(const char *pathname, const char *group,
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
 
 	err = l_settings_has_group(settings, group);
-	if (!err){
+	if (!err) {
 		ret = -EINVAL;
 		goto failure;
 	}
 
 	err = l_settings_get_int(settings, group, key, value);
-	if (!err){
+	if (!err) {
 		ret = -EINVAL;
 		goto failure;
 	}
@@ -198,7 +198,7 @@ int storage_write_key_uint64(const char *pathname, const char *group,
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
@@ -222,19 +222,19 @@ int storage_read_key_uint64(const char *pathname, const char *group,
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
 
 	err = l_settings_has_group(settings, group);
-	if (!err){
+	if (!err) {
 		ret = -EINVAL;
 		goto failure;
 	}
 
 	err = l_settings_get_uint64(settings, group, key, value);
-	if (!err){
+	if (!err) {
 		ret = -EINVAL;
 		goto failure;
 	}
@@ -251,7 +251,7 @@ int storage_remove_group(const char *pathname, const char *group)
 	bool err;
 
 	err = l_settings_load_from_file(settings, pathname);
-	if (!err){
+	if (!err) {
 		ret = -ENOENT;
 		goto failure;
 	}
