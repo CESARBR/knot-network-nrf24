@@ -71,8 +71,13 @@ void storage_foreach_nrf24_keys(const char *pathname,
 	groups = l_settings_get_groups(settings);
 
 	for (i = 0; groups[i] != NULL; i++){
+		if (!l_settings_get_uint64(settings, groups[i], "Id", &id))
+			continue;
+
 		name = l_settings_get_string(settings, groups[i], "Name");
-		l_settings_get_uint64(settings, groups[i], "Id", &id);
+		if (!name)
+			continue;
+
 		func(groups[i], id, name, user_data);
 
 		l_free(name);
