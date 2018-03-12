@@ -695,12 +695,12 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 		hal_log_error("Can't add 'Address' property");
 }
 
-static void register_device(const char *mac, const char *name, void *user_data)
+static void register_device(const char *mac, uint64_t id,
+				const char *name, void *user_data)
 {
 	struct nrf24_adapter *adapter = user_data;
 	struct nrf24_device *device;
 	struct nrf24_mac addr;
-	uint64_t id = UINT64_MAX; /* FIXME read from storage */
 
 	nrf24_str2mac(mac, &addr);
 

@@ -62,6 +62,7 @@ void storage_foreach_nrf24_keys(const char *pathname,
 	struct l_settings *settings = l_settings_new();
 	char **groups;
 	char *name;
+	uint64_t id;
 	int i;
 
 	if (!l_settings_load_from_file(settings, pathname))
@@ -71,7 +72,8 @@ void storage_foreach_nrf24_keys(const char *pathname,
 
 	for (i = 0; groups[i] != NULL; i++){
 		name = l_settings_get_string(settings, groups[i], "name");
-		func(groups[i], name, user_data);
+		l_settings_get_uint64(settings, groups[i], "id", &id);
+		func(groups[i], id, name, user_data);
 
 		l_free(name);
 		l_free(groups[i]);
