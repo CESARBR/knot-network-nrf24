@@ -44,6 +44,7 @@
 #include "storage.h"
 #include "device.h"
 #include "adapter.h"
+#include "settings.h"
 
 #define MAX_PEERS			5
 #define BCAST_TIMEOUT			10000
@@ -713,24 +714,22 @@ static void register_device(const char *mac, uint64_t id,
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 }
 
-int adapter_start(const char *host, const char *keys_pathname,
-		  uint8_t channel, int port,
-		  const struct nrf24_mac *mac)
+int adapter_start(const struct nrf24_mac *mac)
 {
 	const char *path = "/nrf0";
 	int ret;
 
 	/*  TCP development mode: RPi(nrfd) connected to Linux(knotd) */
-	if (host) {
+	if (settings.host) {
 		memset(&inet_address, 0, sizeof(inet_address));
-		ret = tcp_init(host);
+		ret = tcp_init(settings.host);
 		if (ret < 0)
 			return ret;
 
-		tcp_port = port;
+		tcp_port = settings.port;
 	}
 
-	ret = radio_init(channel, mac);
+	ret = radio_init(settings.channel, mac);
 	if (ret < 0)
 		return ret;
 
@@ -749,7 +748,7 @@ int adapter_start(const char *host, const char *keys_pathname,
 	l_hashmap_set_key_free_function(adapter.paging_list, nrf24_destroy);
 
 	adapter.path = l_strdup(path);
-	adapter.keys_pathname = l_strdup(keys_pathname);
+	adapter.keys_pathname = l_strdup(settings.nodes_path);
 	adapter.addr = *mac;
 	adapter.powered = true;
 

@@ -35,16 +35,15 @@
 #include "adapter.h"
 #include "dbus.h"
 #include "manager.h"
+#include "settings.h"
 
-int manager_start(const char *file, const char *host, int port,
-					const char *spi, int channel, int dbm,
-					const char *keys_pathname)
+int manager_start(void)
 {
 	int cfg_channel = 76, cfg_dbm = 0;
 	struct nrf24_mac mac = {.address.uint64 = 0};
 	char *mac_str;
 
-	mac_str = storage_read_key_string(file, "Radio", "mac");
+	mac_str = storage_read_key_string(settings.config_path, "Radio", "mac");
 	if (mac_str != NULL)
 		nrf24_str2mac(mac_str, &mac);
 	else
@@ -54,7 +53,8 @@ int manager_start(const char *file, const char *host, int port,
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		storage_write_key_string(file, "Radio", "mac", mac_str);
+		storage_write_key_string(settings.config_path, "Radio", "mac",
+					 mac_str);
 	}
 
 	l_free(mac_str);
@@ -65,20 +65,20 @@ int manager_start(const char *file, const char *host, int port,
 	 * invalid), switch to channel informed at config file. 76 is the
 	 * default vale if channel in not informed in the config file.
 	 */
-	if (channel < 0 || channel > 125)
-		channel = cfg_channel;
+	if (settings.channel < 0 || settings.channel > 125)
+		settings.channel = cfg_channel;
 
 	/*
 	 * Use TX Power from configuration file if it has not been passed
 	 * through cmd line. -255 means invalid: not informed by user.
 	 */
-	if (dbm == -255)
-		dbm = cfg_dbm;
+	if (settings.dbm == -255)
+		settings.dbm = cfg_dbm;
 
 	dbus_start();
 
 	/* TODO: Missing error handling */
-	return adapter_start(host, keys_pathname, channel, port, &mac);
+	return adapter_start(&mac);
 }
 
 void manager_stop(void)

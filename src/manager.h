@@ -19,7 +19,5 @@
  *
  */
 
-int manager_start(const char *file, const char *host, int port,
-			const char *spi, int channel, int dbm,
-			const char *nodes_file);
+int manager_start(void);
 void manager_stop(void);

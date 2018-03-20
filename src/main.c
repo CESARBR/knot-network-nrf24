@@ -71,7 +71,6 @@ static void signal_handler(struct l_signal *signal, uint32_t signo,
 int main(int argc, char *argv[])
 {
 	struct l_signal *sig;
-	struct settings settings;
 	int err, retval = 0;
 	sigset_t mask;
 
@@ -96,9 +95,7 @@ int main(int argc, char *argv[])
 
 	sig = l_signal_create(&mask, signal_handler, NULL, NULL);
 
-	err = manager_start(settings.config_path, settings.host, settings.port,
-			    settings.spi, settings.channel, settings.dbm,
-			    settings.nodes_path);
+	err = manager_start();
 	if (err < 0) {
 		hal_log_error("manager_start(): %s(%d)", strerror(-err), -err);
 		retval = EXIT_FAILURE;
