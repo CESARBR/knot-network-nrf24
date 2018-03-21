@@ -53,7 +53,6 @@
 struct nrf24_adapter {
 	struct nrf24_mac addr;
 	char *path;			/* Object path */
-	char *keys_pathname;
 	bool powered;
 
 	struct l_hashmap *offline_list;	/* Disconnected devices */
@@ -375,7 +374,7 @@ static void forget_cb(struct nrf24_device *device, void *user_data)
 				return;
 
 	nrf24_mac2str(&addr, mac_str);
-	storage_remove_group(adapter->keys_pathname, mac_str);
+	storage_remove_group(settings.nodes_path, mac_str);
 	l_idle_oneshot(remove_device_oneshot, device, NULL);
 }
 
@@ -599,8 +598,8 @@ static void radio_stop(void)
 
 static void store_device(const char *addr, uint64_t id, const char *name)
 {
-	storage_write_key_string(adapter.keys_pathname, addr, "name", name);
-	storage_write_key_uint64(adapter.keys_pathname, addr, "id", id);
+	storage_write_key_string(settings.nodes_path, addr, "name", name);
+	storage_write_key_uint64(settings.nodes_path, addr, "id", id);
 }
 
 static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
@@ -748,7 +747,6 @@ int adapter_start(const struct nrf24_mac *mac)
 	l_hashmap_set_key_free_function(adapter.paging_list, nrf24_destroy);
 
 	adapter.path = l_strdup(path);
-	adapter.keys_pathname = l_strdup(settings.nodes_path);
 	adapter.addr = *mac;
 	adapter.powered = true;
 
@@ -776,7 +774,7 @@ int adapter_start(const struct nrf24_mac *mac)
 	/* Register device interface */
 	device_start();
 
-	storage_foreach_nrf24_keys(adapter.keys_pathname,
+	storage_foreach_nrf24_keys(settings.nodes_path,
 				   register_device, &adapter);
 
 	return 0;
@@ -790,7 +788,6 @@ void adapter_stop(void)
 
 	radio_stop();
 
-	l_free(adapter.keys_pathname);
 	l_free(adapter.path);
 
 	device_stop();
