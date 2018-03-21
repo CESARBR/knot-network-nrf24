@@ -43,7 +43,8 @@ int manager_start(void)
 	struct nrf24_mac mac = {.address.uint64 = 0};
 	char *mac_str;
 
-	mac_str = storage_read_key_string(settings.config_path, "Radio", "mac");
+	mac_str = storage_read_key_string(settings.config_path, "Radio",
+					 "Address");
 	if (mac_str != NULL)
 		nrf24_str2mac(mac_str, &mac);
 	else
@@ -53,8 +54,8 @@ int manager_start(void)
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		storage_write_key_string(settings.config_path, "Radio", "mac",
-					 mac_str);
+		storage_write_key_string(settings.config_path, "Radio",
+					 "Address", mac_str);
 	}
 
 	l_free(mac_str);
