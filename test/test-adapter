@@ -15,6 +15,7 @@ if (len(args) < 1):
         print("")
         print("  info")
         print("  powered [on/off]")
+        print("  add [Address] [Name] [Id]")
         print("  remove [device path]")
         sys.exit(1)
 
@@ -62,8 +63,10 @@ if (cmd == "add"):
         device_dict.update({"Id": device_id})
         dbus_dict = dbus.Dictionary(device_dict, signature='sv')
         print (adapter.AddDevice(dbus_dict))
+        sys.exit(0)
 
 if (cmd == "remove"):
 	print ("Removing device %s" % args[1])
 	devpath = dbus.ObjectPath(args[1])
 	print (adapter.RemoveDevice(devpath))
+	sys.exit(0)
