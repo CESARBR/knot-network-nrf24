@@ -35,6 +35,7 @@
 
 #include "dbus.h"
 #include "device.h"
+#include "storage.h"
 
 struct nrf24_device {
 	struct nrf24_mac addr;
@@ -104,6 +105,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						void *user_data)
 {
 	struct nrf24_device *device = user_data;
+	char mac_str[24];
 
 	if (device->paired)
 		return dbus_error_already_exists(msg, "Already paired");
@@ -119,6 +121,11 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	/* TODO: Pair() will be asynchronous ... */
 	l_dbus_message_unref(device->msg);
 	device->msg = NULL;
+
+	if (nrf24_mac2str(&device->addr, mac_str) != 0)
+		return dbus_error_invalid_args(msg);
+
+	store_device(mac_str, device->id, device->name);
 
 	return l_dbus_message_new_method_return(msg);
 }
