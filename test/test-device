@@ -34,3 +34,8 @@ if (cmd == "pair"):
 	print ("Pairing ...")
 	device.Pair("")
 	sys.exit(0)
+
+if (cmd == "forget"):
+	print ("Forgetting ...")
+	device.Forget("")
+	sys.exit(0)
