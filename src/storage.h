@@ -43,4 +43,6 @@ int storage_write_key_uint64(const char *pathname, const char *group,
 int storage_read_key_uint64(const char *pathname, const char *group,
 			    const char *key, uint64_t *value);
 
+void store_device(const char *addr, uint64_t id, const char *name);
+
 int storage_remove_group(const char *pathname, const char *group);

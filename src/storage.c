@@ -31,6 +31,7 @@
 #include <ell/ell.h>
 
 #include "storage.h"
+#include "settings.h"
 
 static int settings_to_file(const char *pathname, struct l_settings *settings)
 {
@@ -242,6 +243,12 @@ int storage_read_key_uint64(const char *pathname, const char *group,
 failure:
 	l_settings_free(settings);
 	return ret;
+}
+
+void store_device(const char *addr, uint64_t id, const char *name)
+{
+	storage_write_key_string(settings.nodes_path, addr, "Name", name);
+	storage_write_key_uint64(settings.nodes_path, addr, "Id", id);
 }
 
 int storage_remove_group(const char *pathname, const char *group)
