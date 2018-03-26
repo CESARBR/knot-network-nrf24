@@ -35,4 +35,6 @@ struct nrf24_device *device_create(const char *adapter_path,
 				   uint64_t id, const char *name, bool paired,
 				   device_forget_cb_t forget_cb,
 				   void *user_data);
+uint32_t device_get_last_seen(struct nrf24_device *device);
+void device_set_last_seen(struct nrf24_device *device, uint32_t time_seen);
 void device_destroy(struct nrf24_device *device);

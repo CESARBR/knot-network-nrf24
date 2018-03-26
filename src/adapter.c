@@ -71,6 +71,7 @@ struct idle_pipe {
 
 static struct nrf24_adapter adapter; /* Supports only one local adapter */
 static struct l_idle *mgmt_idle;
+static struct l_timeout *mgmt_timeout;
 static struct in_addr inet_address;
 static int tcp_port;
 static int mgmtfd;
@@ -309,6 +310,27 @@ done:
 	}
 }
 
+static bool offline_foreach(const void *key, void *value, void *user_data)
+{
+	struct nrf24_device *device = value;
+	uint32_t ctime = L_PTR_TO_UINT(user_data);
+	struct nrf24_mac addr;
+	char str[24];
+
+	if (device_is_paired(device))
+		return false;
+
+	if (hal_timeout(ctime, device_get_last_seen(value), 7000) == 0)
+		return false;
+
+	device_get_address(device, &addr);
+	nrf24_mac2str(&addr, str);
+	hal_log_info("Destroying %p %s", device, str);
+	device_destroy(device);
+
+	return true;
+}
+
 static bool paging_foreach(const void *key, void *value, void *user_data)
 {
 	const struct nrf24_mac *addr = key;
@@ -457,12 +479,22 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 		device = device_create(adapter.path,
 				       &evt->mac, evt->id, name, false,
 				       forget_cb, &adapter);
+
 		l_free(name);
 
+		if (!device) {
+			nrf24_mac2str(&evt->mac, mac_str);
+			hal_log_error("Can't create device %s", mac_str);
+			return -EAGAIN;
+		}
+
+		device_set_last_seen(device, hal_time_ms());
 		l_hashmap_insert(adapter.offline_list, &evt->mac, device);
 
 		return 0;
 	}
+
+	device_set_last_seen(device, hal_time_ms());
 
 	/* Paired/Known device? */
 	if (!device_is_paired(device))
@@ -555,6 +587,17 @@ static void mgmt_idle_read(struct l_idle *idle, void *user_data)
 	}
 }
 
+static void mgmt_timeout_cb(struct l_timeout *timeout, void *user_data)
+{
+	uint32_t timestamp = hal_time_ms();
+
+	l_hashmap_foreach_remove(adapter.offline_list,
+					    offline_foreach,
+					    L_UINT_TO_PTR(timestamp));
+
+	l_timeout_modify(mgmt_timeout, 5);
+}
+
 static int radio_init(uint8_t channel, const struct nrf24_mac *addr)
 {
 	const struct nrf24_config config = {
@@ -577,6 +620,7 @@ static int radio_init(uint8_t channel, const struct nrf24_mac *addr)
 	}
 
 	mgmt_idle = l_idle_create(mgmt_idle_read, NULL, NULL);
+	mgmt_timeout = l_timeout_create(5, mgmt_timeout_cb, NULL, NULL);
 	hal_log_info("Radio initialized");
 
 	return 0;
@@ -592,6 +636,8 @@ static void radio_stop(void)
 	hal_comm_close(mgmtfd);
 	if (mgmt_idle)
 		l_idle_remove(mgmt_idle);
+	if (mgmt_timeout)
+		l_timeout_remove(mgmt_timeout);
 
 	hal_comm_deinit();
 }

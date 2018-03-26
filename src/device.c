@@ -40,6 +40,7 @@
 struct nrf24_device {
 	struct nrf24_mac addr;
 	int refs;
+	uint32_t last_seen;
 	uint64_t id;
 	char *name;
 	char *dpath;		/* Device object path */
@@ -379,6 +380,16 @@ void device_set_connected(struct nrf24_device *device, bool connected)
 	l_dbus_send(dbus_get_bus(), signal);
 
 	device->connected = connected;
+}
+
+uint32_t device_get_last_seen(struct nrf24_device *device)
+{
+	return device->last_seen;
+}
+
+void device_set_last_seen(struct nrf24_device *device, uint32_t time_seen)
+{
+	device->last_seen = time_seen;
 }
 
 int device_start(void)
