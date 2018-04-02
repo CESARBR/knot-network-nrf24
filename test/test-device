@@ -39,3 +39,13 @@ if (cmd == "forget"):
 	print ("Forgetting ...")
 	device.Forget("")
 	sys.exit(0)
+
+if (cmd == "name"):
+	print ("Setting Name...")
+	name = props.Get("br.org.cesar.knot.nrf.Device1", "Name")
+	print ("Current Name: %s" % name)
+	value = dbus.String(sys.argv[4])
+	props.Set("br.org.cesar.knot.nrf.Device1", "Name", value)
+	name = props.Get("br.org.cesar.knot.nrf.Device1", "Name")
+	print ("New Name: %s" % name)
+	sys.exit(0)
