@@ -36,6 +36,7 @@
 #include "dbus.h"
 #include "device.h"
 #include "storage.h"
+#include "settings.h"
 
 struct nrf24_device {
 	struct nrf24_mac addr;
@@ -101,6 +102,23 @@ static void emit_signal_paired(const char *path, bool paired)
 	l_dbus_send(dbus_get_bus(), signal);
 }
 
+static void emit_signal_name_changed(const char *path, const char *newname)
+{
+	struct l_dbus_message *signal;
+	struct l_dbus_message_builder *builder;
+
+	signal = l_dbus_message_new_signal(dbus_get_bus(),
+					   path,
+					   DEVICE_INTERFACE,
+					   "Name");
+	builder = l_dbus_message_builder_new(signal);
+	l_dbus_message_builder_append_basic(builder, 's', newname);
+	l_dbus_message_builder_finalize(builder);
+	l_dbus_message_builder_destroy(builder);
+
+	l_dbus_send(dbus_get_bus(), signal);
+}
+
 static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
@@ -157,7 +175,29 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	return l_dbus_message_new_method_return(msg);
 }
 
-/* TODO: Missing set name */
+static struct l_dbus_message *property_set_name(struct l_dbus *dbus,
+					 struct l_dbus_message *msg,
+					 struct l_dbus_message_iter *new_value,
+					 l_dbus_property_complete_cb_t complete,
+					 void *user_data)
+{
+	struct nrf24_device *device = user_data;
+	const char *name;
+	char mac_str[24];
+
+	if (!l_dbus_message_iter_get_variant(new_value, "s", &name))
+		return dbus_error_invalid_args(msg);
+
+	l_free(device->name);
+	device->name = l_strdup(name);
+	nrf24_mac2str(&device->addr, mac_str);
+	storage_write_key_string(settings.nodes_path, mac_str, "Name", name);
+	hal_log_info("%s SetProperty(Name = %s)", device->dpath, device->name);
+
+	emit_signal_name_changed(device->dpath, device->name);
+
+	return l_dbus_message_new_method_return(msg);
+}
 static bool property_get_name(struct l_dbus *dbus,
 				  struct l_dbus_message *msg,
 				  struct l_dbus_message_builder *builder,
@@ -229,8 +269,6 @@ static bool property_get_connected(struct l_dbus *dbus,
 	return true;
 }
 
-/* TODO: Missing to store the device when set_paired is called */
-
 static bool property_get_paired(struct l_dbus *dbus,
 				     struct l_dbus_message *msg,
 				     struct l_dbus_message_builder *builder,
@@ -255,7 +293,7 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 
 	if (!l_dbus_interface_property(interface, "Name", 0, "s",
 				       property_get_name,
-				       NULL))
+				       property_set_name))
 		hal_log_error("Can't add 'Name' property");
 
 	if (!l_dbus_interface_property(interface, "Id", 0, "t",
