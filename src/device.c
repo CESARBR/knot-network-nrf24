@@ -85,40 +85,6 @@ static void device_unref(struct nrf24_device *device)
 	device_free(device);
 }
 
-static void emit_signal_paired(const char *path, bool paired)
-{
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
-
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   path,
-					   DEVICE_INTERFACE,
-					   "Paired");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &paired);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	l_dbus_send(dbus_get_bus(), signal);
-}
-
-static void emit_signal_name_changed(const char *path, const char *newname)
-{
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
-
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   path,
-					   DEVICE_INTERFACE,
-					   "Name");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 's', newname);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	l_dbus_send(dbus_get_bus(), signal);
-}
-
 static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 						struct l_dbus_message *msg,
 						void *user_data)
@@ -135,7 +101,8 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	device->msg = l_dbus_message_ref(msg);
 	device->paired = true;
 
-	emit_signal_paired(device->dpath, device->paired);
+	l_dbus_property_changed(dbus_get_bus(), device->dpath,
+				DEVICE_INTERFACE,"Paired");
 
 	/* TODO: Pair() will be asynchronous ... */
 	l_dbus_message_unref(device->msg);
@@ -164,8 +131,6 @@ static struct l_dbus_message *method_forget(struct l_dbus *dbus,
 	device->msg = l_dbus_message_ref(msg);
 	device->paired = false;
 
-	emit_signal_paired(device->dpath, device->paired);
-
 	device->forget_cb(device, device->user_data);
 
 	/* TODO: Forget() will be asynchronous ... */
@@ -193,8 +158,6 @@ static struct l_dbus_message *property_set_name(struct l_dbus *dbus,
 	nrf24_mac2str(&device->addr, mac_str);
 	storage_write_key_string(settings.nodes_path, mac_str, "Name", name);
 	hal_log_info("%s SetProperty(Name = %s)", device->dpath, device->name);
-
-	emit_signal_name_changed(device->dpath, device->name);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -400,24 +363,12 @@ bool device_is_paired(const struct nrf24_device *device)
 
 void device_set_connected(struct nrf24_device *device, bool connected)
 {
-	struct l_dbus_message *signal;
-	struct l_dbus_message_builder *builder;
-
 	if (device->connected == connected)
 		return;
 
-	signal = l_dbus_message_new_signal(dbus_get_bus(),
-					   device->dpath,
-					   DEVICE_INTERFACE,
-					   "Connected");
-	builder = l_dbus_message_builder_new(signal);
-	l_dbus_message_builder_append_basic(builder, 'b', &connected);
-	l_dbus_message_builder_finalize(builder);
-	l_dbus_message_builder_destroy(builder);
-
-	l_dbus_send(dbus_get_bus(), signal);
-
 	device->connected = connected;
+	l_dbus_property_changed(dbus_get_bus(), device->dpath,
+				DEVICE_INTERFACE,"Connected");
 }
 
 uint32_t device_get_last_seen(struct nrf24_device *device)
