@@ -66,6 +66,10 @@ int manager_start(void)
 	 * invalid), switch to channel informed at config file. 76 is the
 	 * default vale if channel in not informed in the config file.
 	 */
+	if (settings.channel < 0)
+		storage_read_key_int(settings.config_path, "Radio", "Channel",
+				     &cfg_channel);
+
 	if (settings.channel < 0 || settings.channel > 125)
 		settings.channel = cfg_channel;
 
