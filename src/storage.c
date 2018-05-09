@@ -63,7 +63,7 @@ void storage_foreach_nrf24_keys(const char *pathname,
 	struct l_settings *settings = l_settings_new();
 	char **groups;
 	char *name;
-	uint64_t id;
+	char *id;
 	int i;
 
 	if (!l_settings_load_from_file(settings, pathname))
@@ -72,7 +72,8 @@ void storage_foreach_nrf24_keys(const char *pathname,
 	groups = l_settings_get_groups(settings);
 
 	for (i = 0; groups[i] != NULL; i++) {
-		if (!l_settings_get_uint64(settings, groups[i], "Id", &id))
+		id = l_settings_get_string(settings, groups[i], "Id");
+		if (!id)
 			continue;
 
 		name = l_settings_get_string(settings, groups[i], "Name");
@@ -82,6 +83,7 @@ void storage_foreach_nrf24_keys(const char *pathname,
 		func(groups[i], id, name, user_data);
 
 		l_free(name);
+		l_free(id);
 		l_free(groups[i]);
 	}
 
@@ -233,10 +235,10 @@ failure:
 	return ret;
 }
 
-void store_device(const char *addr, uint64_t id, const char *name)
+void store_device(const char *addr, const char *id, const char *name)
 {
 	storage_write_key_string(settings.nodes_path, addr, "Name", name);
-	storage_write_key_uint64(settings.nodes_path, addr, "Id", id);
+	storage_write_key_string(settings.nodes_path, addr, "Id", id);
 }
 
 int storage_remove_group(const char *pathname, const char *group)

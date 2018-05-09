@@ -32,7 +32,7 @@ bool device_is_paired(const struct nrf24_device *device);
 void device_set_connected(struct nrf24_device *device, bool connected);
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
-				   uint64_t id, const char *name, bool paired,
+				   const char *id, const char *name, bool paired,
 				   device_forget_cb_t forget_cb,
 				   void *user_data);
 uint32_t device_get_last_seen(struct nrf24_device *device);

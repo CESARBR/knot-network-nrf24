@@ -56,7 +56,7 @@ if (cmd == "add"):
         print ("  Id:  %s" % args[3])
         mac_addr = dbus.String(args[1])
         name = dbus.String(args[2])
-        device_id = dbus.UInt64(args[3])
+        device_id = dbus.String(args[3])
         device_dict = dict()
         device_dict.update({"Address": mac_addr})
         device_dict.update({"Name": name})

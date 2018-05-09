@@ -76,7 +76,7 @@ Properties 	string Address [readonly]
 		64-bit nRF24 address.
 		eg: 88:77:66:55:44:33:22:11 (MSB on left)
 
-		uint64 Id [readonly]
+		string Id [readonly]
 
 		Unique identification exposed to service level. Technology
 		agnostic value to allow mapping a virtual device representation

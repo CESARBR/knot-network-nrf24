@@ -42,7 +42,7 @@ struct nrf24_device {
 	struct nrf24_mac addr;
 	int refs;
 	uint32_t last_seen;
-	uint64_t id;
+	char *id;
 	char *name;
 	char *dpath;		/* Device object path */
 	char *apath;		/* Adapter object path */
@@ -59,6 +59,7 @@ static void device_free(struct nrf24_device *device)
 		l_dbus_message_unref(device->msg);
 
 	l_free(device->name);
+	l_free(device->id);
 	l_free(device->dpath);
 	l_free(device->apath);
 	l_free(device);
@@ -181,8 +182,8 @@ static bool property_get_id(struct l_dbus *dbus,
 {
 	struct nrf24_device *device = user_data;
 
-	l_dbus_message_builder_append_basic(builder, 't', &device->id);
-	hal_log_info("%s GetProperty(Id = %"PRIu64")",
+	l_dbus_message_builder_append_basic(builder, 's', device->id);
+	hal_log_info("%s GetProperty(Id = %s)",
 		     device->dpath, device->id);
 
 	return true;
@@ -259,7 +260,7 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 				       property_set_name))
 		hal_log_error("Can't add 'Name' property");
 
-	if (!l_dbus_interface_property(interface, "Id", 0, "t",
+	if (!l_dbus_interface_property(interface, "Id", 0, "s",
 				       property_get_id,
 				       NULL))
 		hal_log_error("Can't add 'Id' property");
@@ -287,7 +288,7 @@ static void device_setup_interface(struct l_dbus_interface *interface)
 
 struct nrf24_device *device_create(const char *adapter_path,
 				   const struct nrf24_mac *addr,
-				   uint64_t id, const char *name, bool paired,
+				   const char *id, const char *name, bool paired,
 				   device_forget_cb_t forget_cb,
 				   void *user_data)
 {
@@ -301,7 +302,7 @@ struct nrf24_device *device_create(const char *adapter_path,
 	device->addr = *addr;
 	device->paired = paired;
 	device->connected = false;
-	device->id = id;
+	device->id = l_strdup_printf("%016"PRIx64 , strtoull(id, NULL, 0));
 	device->forget_cb = forget_cb;
 	device->user_data = user_data;
 

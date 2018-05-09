@@ -32,6 +32,7 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <stdio.h>
 
 #include <ell/ell.h>
 
@@ -440,6 +441,7 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 	char mac_str[24];
 	const char *end;
 	char *name;
+	char id[17];
 	struct nrf24_device *device;
 	struct idle_pipe *pipe;
 	struct mgmt_evt_nrf24_bcast_presence *evt =
@@ -476,8 +478,9 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 			return 0;
 
 		name = l_strndup(evt->name, name_len);
+		snprintf(id, 17, "%016"PRIx64, evt->id);
 		device = device_create(adapter.path,
-				       &evt->mac, evt->id, name, false,
+				       &evt->mac, id, name, false,
 				       forget_cb, &adapter);
 
 		l_free(name);
@@ -653,8 +656,8 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	struct nrf24_mac addr;
 	const char *mac_str = NULL;
 	const char *name = NULL;
+	const char *id = NULL;
 	char *key;
-	uint64_t id = UINT64_MAX;
 
 	if (!l_dbus_message_get_arguments(msg, "a{sv}", &dict))
 		return dbus_error_invalid_args(msg);
@@ -670,7 +673,7 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 			return dbus_error_invalid_args(msg);
 	}
 
-	if (!mac_str || !name || id == UINT64_MAX)
+	if (!mac_str || !name || !id)
 		return dbus_error_invalid_args(msg);
 
 	if (nrf24_str2mac(mac_str, &addr) != 0)
@@ -735,7 +738,7 @@ static void adapter_setup_interface(struct l_dbus_interface *interface)
 		hal_log_error("Can't add 'Address' property");
 }
 
-static void register_device(const char *mac, uint64_t id,
+static void register_device(const char *mac, const char *id,
 				const char *name, void *user_data)
 {
 	struct nrf24_adapter *adapter = user_data;
