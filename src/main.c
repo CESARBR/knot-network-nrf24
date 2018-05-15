@@ -103,14 +103,14 @@ int main(int argc, char *argv[])
 	}
 
 	/* Set user id to nobody */
-	if (setuid(65534) != 0) {
+/*	if (setuid(65534) != 0) {
 		err = errno;
 		hal_log_error("Set uid to nobody failed. %s(%d).",
 			      strerror(err), err);
 		retval = EXIT_FAILURE;
 		goto fail_setuid;
 	}
-
+*/
 	if (settings.detach) {
 		if (daemon(0, 0)) {
 			hal_log_error("Can't start daemon!");
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 	l_main_exit();
 
 fail_detach:
-fail_setuid:
+/*fail_setuid:*/
 	manager_stop();
 
 fail_manager_start:
