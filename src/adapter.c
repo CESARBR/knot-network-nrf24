@@ -88,9 +88,9 @@ static bool pipe_match_addr(const void *a, const void *b)
 static bool pipe_match_rxsock(const void *a, const void *b)
 {
 	const struct idle_pipe *pipe = a;
-	const int *rxsock = b;
+	const int rxsock = L_PTR_TO_INT(b);
 
-	return (pipe->rxsock == *rxsock ? true : false);
+	return (pipe->rxsock == rxsock ? true : false);
 }
 
 static unsigned int nrf24_mac_hash(const void *p)
