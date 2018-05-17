@@ -15,6 +15,11 @@ if (len(args) < 1):
         print("")
         print("  info")
         print("  powered [on/off]")
+        print("  pair")
+        print("  forget")
+        print("  name [new_name]")
+        print("Options:")
+        print("  -p, --path		device object path")
         sys.exit(1)
 
 cmd = args[0]
@@ -44,7 +49,7 @@ if (cmd == "name"):
 	print ("Setting Name...")
 	name = props.Get("br.org.cesar.knot.nrf.Device1", "Name")
 	print ("Current Name: %s" % name)
-	value = dbus.String(sys.argv[4])
+	value = dbus.String(args[1])
 	props.Set("br.org.cesar.knot.nrf.Device1", "Name", value)
 	name = props.Get("br.org.cesar.knot.nrf.Device1", "Name")
 	print ("New Name: %s" % name)
