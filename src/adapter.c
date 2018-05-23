@@ -133,7 +133,7 @@ static int unix_connect(void)
 	/* Represents unix socket from nrfd to knotd */
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path + 1, KNOTD_UNIX_ADDRESS,
+	memcpy(addr.sun_path + 1, KNOTD_UNIX_ADDRESS,
 					strlen(KNOTD_UNIX_ADDRESS));
 
 	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1)
