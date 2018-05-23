@@ -657,6 +657,8 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	const char *mac_str = NULL;
 	const char *name = NULL;
 	const char *id = NULL;
+	char id16[] = "0000000000000000";
+	int id_len;
 	char *key;
 
 	if (!l_dbus_message_get_arguments(msg, "a{sv}", &dict))
@@ -679,7 +681,14 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	if (nrf24_str2mac(mac_str, &addr) != 0)
 		return dbus_error_invalid_args(msg);
 
-	device = device_create(adapter->path, &addr, id, name, true,
+	id_len = strlen(id);
+	if (id_len < 1 || id_len > 16)
+		return dbus_error_invalid_args(msg);
+
+	/* Padding '0' if id len is smaller 16 chars */
+	memcpy(&id16[strlen(id16) - id_len], id, id_len);
+
+	device = device_create(adapter->path, &addr, id16, name, true,
 			       forget_cb, adapter);
 	if (!device)
 		return dbus_error_invalid_args(msg);
