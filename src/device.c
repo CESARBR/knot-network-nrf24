@@ -302,7 +302,7 @@ struct nrf24_device *device_create(const char *adapter_path,
 	device->addr = *addr;
 	device->paired = paired;
 	device->connected = false;
-	device->id = l_strdup_printf("%016"PRIx64 , strtoull(id, NULL, 0));
+	device->id = l_strdup(id);
 	device->forget_cb = forget_cb;
 	device->user_data = user_data;
 
