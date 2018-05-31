@@ -24,6 +24,7 @@
 #endif
 
 #include <stdint.h>
+#include <errno.h>
 #include <unistd.h>
 #include <ell/ell.h>
 
@@ -37,14 +38,17 @@
 #include "manager.h"
 #include "settings.h"
 
-int manager_start(void)
+static struct l_dbus_client *client;
+
+static void service_available(struct l_dbus_client *client, void *user_data)
 {
-	int cfg_channel = 76, cfg_dbm = 0;
-	struct nrf24_mac mac = {.address.uint64 = 0};
+	struct nrf24_mac mac = { .address.uint64 = 0 };
 	char *mac_str;
 
-	mac_str = storage_read_key_string(settings.config_path, "Radio",
-					 "Address");
+	hal_log_info("Service (knotd) available. Starting local adapter ...");
+
+	mac_str = storage_read_key_string(settings.config_path,
+					  "Radio", "Address");
 	if (mac_str != NULL)
 		nrf24_str2mac(mac_str, &mac);
 	else
@@ -54,11 +58,25 @@ int manager_start(void)
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		storage_write_key_string(settings.config_path, "Radio",
-					 "Address", mac_str);
+		storage_write_key_string(settings.config_path,
+					 "Radio", "Address", mac_str);
 	}
 
 	l_free(mac_str);
+
+	if (adapter_start(&mac) != 0)
+		hal_log_error("Critical error: Can't start local adapter");
+}
+
+static void service_unavailable(struct l_dbus *dbus, void *user_data)
+{
+	hal_log_info("Service (knotd) unavailable. Stopping local adapter ...");
+	adapter_stop();
+}
+
+int manager_start(void)
+{
+	int cfg_channel = 76, cfg_dbm = 0;
 
 	/*
 	 * Priority order: 1) command line 2) config file.
@@ -82,12 +100,30 @@ int manager_start(void)
 
 	dbus_start();
 
-	/* TODO: Missing error handling */
-	return adapter_start(&mac);
+	/* Enable adapter & radio if service is available only */
+	client = l_dbus_client_new(dbus_get_bus(), "br.org.cesar.knot", "/");
+	if (client == NULL)
+		return -EACCES;
+
+	if (!l_dbus_client_set_disconnect_handler(client,
+				 service_unavailable, NULL, NULL))
+		goto fail;
+
+	if (!l_dbus_client_set_ready_handler(client,
+				    service_available, NULL, NULL))
+		goto fail;
+
+	return 0;
+
+fail:
+	l_dbus_client_destroy(client);
+	return -EACCES;
+
 }
 
 void manager_stop(void)
 {
+	l_dbus_client_destroy(client);
 	adapter_stop();
 	dbus_stop();
 }
