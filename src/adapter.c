@@ -397,7 +397,7 @@ static void forget_cb(struct nrf24_device *device, void *user_data)
 				return;
 
 	nrf24_mac2str(&addr, mac_str);
-	storage_remove_group(settings.nodes_path, mac_str);
+	storage_remove_group(settings.nodes_fd, mac_str);
 	l_idle_oneshot(remove_device_oneshot, device, NULL);
 }
 
@@ -693,7 +693,8 @@ static struct l_dbus_message *method_add_device(struct l_dbus *dbus,
 	if (!device)
 		return dbus_error_invalid_args(msg);
 
-	store_device(mac_str, id, name);
+	storage_write_key_string(settings.nodes_fd, mac_str, "Name", name);
+	storage_write_key_string(settings.nodes_fd, mac_str, "Id", id);
 
 	l_hashmap_insert(adapter->offline_list, &addr, device);
 
@@ -826,7 +827,7 @@ int adapter_start(const struct nrf24_mac *mac)
 	/* Register device interface */
 	device_start();
 
-	storage_foreach_nrf24_keys(settings.nodes_path,
+	storage_foreach_nrf24_keys(settings.nodes_fd,
 				   register_device, &adapter);
 
 	return 0;

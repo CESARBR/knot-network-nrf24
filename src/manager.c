@@ -48,7 +48,7 @@ static void service_available(struct l_dbus_client *client, void *user_data)
 
 	hal_log_info("Service (knotd) available. Starting local adapter ...");
 
-	mac_str = storage_read_key_string(settings.config_path,
+	mac_str = storage_read_key_string(settings.config_fd,
 					  "Radio", "Address");
 	if (mac_str != NULL)
 		nrf24_str2mac(mac_str, &mac);
@@ -59,7 +59,7 @@ static void service_available(struct l_dbus_client *client, void *user_data)
 	if (mac.address.uint64 == 0) {
 		hal_getrandom(&mac, sizeof(mac));
 		nrf24_mac2str(&mac, mac_str);
-		storage_write_key_string(settings.config_path,
+		storage_write_key_string(settings.config_fd,
 					 "Radio", "Address", mac_str);
 	}
 
@@ -82,6 +82,19 @@ int manager_start(void)
 {
 	int cfg_channel = 76, cfg_dbm = 0;
 
+	settings.config_fd = storage_open(settings.config_filename);
+	if (settings.config_fd < 0) {
+		hal_log_error("Can't open file: %s", settings.config_filename);
+		return -EIO;
+	}
+
+	settings.nodes_fd = storage_open(settings.nodes_filename);
+	if (settings.nodes_fd < 0) {
+		hal_log_error("Can't open file: %s", settings.nodes_filename);
+		storage_close(settings.config_fd);
+		return -EIO;
+	}
+
 	/*
 	 * Priority order: 1) command line 2) config file.
 	 * If the user does not provide channel at command line (or channel is
@@ -89,7 +102,7 @@ int manager_start(void)
 	 * default vale if channel in not informed in the config file.
 	 */
 	if (settings.channel < 0)
-		storage_read_key_int(settings.config_path, "Radio", "Channel",
+		storage_read_key_int(settings.config_fd, "Radio", "Channel",
 				     &cfg_channel);
 
 	if (settings.channel < 0 || settings.channel > 125)
@@ -121,12 +134,18 @@ int manager_start(void)
 
 fail:
 	l_dbus_client_destroy(client);
+	storage_close(settings.config_fd);
+	storage_close(settings.nodes_fd);
+
 	return -EACCES;
 
 }
 
 void manager_stop(void)
 {
+	storage_close(settings.config_fd);
+	storage_close(settings.nodes_fd);
+
 	l_dbus_client_destroy(client);
 	if (adapter_enabled)
 		adapter_stop();

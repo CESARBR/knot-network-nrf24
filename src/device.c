@@ -112,7 +112,10 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	if (nrf24_mac2str(&device->addr, mac_str) != 0)
 		return dbus_error_invalid_args(msg);
 
-	store_device(mac_str, device->id, device->name);
+	storage_write_key_string(settings.nodes_fd, mac_str,
+				 "Name", device->name);
+	storage_write_key_string(settings.nodes_fd, mac_str,
+				 "Id", device->id);
 
 	return l_dbus_message_new_method_return(msg);
 }
@@ -157,7 +160,7 @@ static struct l_dbus_message *property_set_name(struct l_dbus *dbus,
 	l_free(device->name);
 	device->name = l_strdup(name);
 	nrf24_mac2str(&device->addr, mac_str);
-	storage_write_key_string(settings.nodes_path, mac_str, "Name", name);
+	storage_write_key_string(settings.nodes_fd, mac_str, "Name", name);
 	hal_log_info("%s SetProperty(Name = %s)", device->dpath, device->name);
 
 	return l_dbus_message_new_method_return(msg);

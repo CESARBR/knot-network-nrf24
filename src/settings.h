@@ -20,8 +20,10 @@
  */
 
 struct settings {
-	const char *config_path;
-	const char *nodes_path;
+	const char *config_filename;
+	const char *nodes_filename;
+	int config_fd;
+	int nodes_fd;
 
 	const char *host;
 	unsigned int port;

@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
 
 	sig = l_signal_create(&mask, signal_handler, NULL, NULL);
 
+	hal_log_info("Starting manager ...");
 	err = manager_start();
 	if (err < 0) {
 		hal_log_error("manager_start(): %s(%d)", strerror(-err), -err);
@@ -102,15 +103,17 @@ int main(int argc, char *argv[])
 		goto fail_manager_start;
 	}
 
+#if 0
+	hal_log_info("Switching to nobody ...");
 	/* Set user id to nobody */
-/*	if (setuid(65534) != 0) {
+	if (setuid(65534) != 0) {
 		err = errno;
 		hal_log_error("Set uid to nobody failed. %s(%d).",
 			      strerror(err), err);
 		retval = EXIT_FAILURE;
 		goto fail_setuid;
 	}
-*/
+#endif
 	if (settings.detach) {
 		if (daemon(0, 0)) {
 			hal_log_error("Can't start daemon!");
@@ -128,7 +131,7 @@ int main(int argc, char *argv[])
 	l_main_exit();
 
 fail_detach:
-/*fail_setuid:*/
+// fail_setuid:
 	manager_stop();
 
 fail_manager_start:

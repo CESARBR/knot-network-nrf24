@@ -81,10 +81,10 @@ static int parse_args(int argc, char *argv[], struct settings *settings)
 
 		switch (opt) {
 		case 'c':
-			settings->config_path = optarg;
+			settings->config_filename = optarg;
 			break;
 		case 'f':
-			settings->nodes_path = optarg;
+			settings->nodes_filename = optarg;
 			break;
 		case 'h':
 			settings->host = optarg;
@@ -153,8 +153,8 @@ static int is_valid_nodes_file(const char *nodes_path)
 
 int settings_parse(int argc, char *argv[], struct settings *settings)
 {
-	settings->config_path = config_path;
-	settings->nodes_path = nodes_path;
+	settings->config_filename = config_path;
+	settings->nodes_filename = nodes_path;
 	settings->host = host;
 	settings->port = port;
 	settings->spi = spi;
@@ -166,6 +166,6 @@ int settings_parse(int argc, char *argv[], struct settings *settings)
 	if (!parse_args(argc, argv, settings))
 		return EXIT_FAILURE;
 
-	return is_valid_config_file(settings->config_path)
-		&& is_valid_nodes_file(settings->nodes_path);
+	return is_valid_config_file(settings->config_filename)
+		&& is_valid_nodes_file(settings->nodes_filename);
 }
