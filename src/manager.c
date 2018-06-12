@@ -39,6 +39,7 @@
 #include "settings.h"
 
 static struct l_dbus_client *client;
+static bool adapter_enabled = false;
 
 static void service_available(struct l_dbus_client *client, void *user_data)
 {
@@ -66,12 +67,15 @@ static void service_available(struct l_dbus_client *client, void *user_data)
 
 	if (adapter_start(&mac) != 0)
 		hal_log_error("Critical error: Can't start local adapter");
+	else
+		adapter_enabled = true;
 }
 
 static void service_unavailable(struct l_dbus *dbus, void *user_data)
 {
 	hal_log_info("Service (knotd) unavailable. Stopping local adapter ...");
 	adapter_stop();
+	adapter_enabled = false;
 }
 
 int manager_start(void)
@@ -124,6 +128,7 @@ fail:
 void manager_stop(void)
 {
 	l_dbus_client_destroy(client);
-	adapter_stop();
+	if (adapter_enabled)
+		adapter_stop();
 	dbus_stop();
 }
