@@ -63,6 +63,7 @@ struct nrf24_adapter {
 };
 
 struct idle_pipe {
+	int refs;
 	struct nrf24_mac addr;	/* Peer/Device address */
 	struct l_idle *idle;	/* Polling idle for radio data */
 	int rxsock;		/* nRF24 HAL COMM socket */
@@ -76,6 +77,44 @@ static struct l_timeout *mgmt_timeout;
 static struct in_addr inet_address;
 static int tcp_port;
 static int mgmtfd;
+
+static void idle_pipe_free(struct idle_pipe *pipe)
+{
+	hal_log_info("idle_pipe_free(%p)", pipe);
+
+	if (pipe->rxsock)
+		hal_comm_close(pipe->rxsock);
+
+	if (pipe->txsock)
+		close(pipe->txsock);
+
+	l_free(pipe);
+}
+
+static struct idle_pipe *idle_pipe_ref(struct idle_pipe *pipe)
+{
+	if (unlikely(!pipe))
+		return NULL;
+
+	__sync_fetch_and_add(&pipe->refs, 1);
+
+	hal_log_info("idle_pipe_ref(%p): %d", pipe, pipe->refs);
+
+	return pipe;
+}
+
+static void idle_pipe_unref(struct idle_pipe *pipe)
+{
+	if (unlikely(!pipe))
+		return;
+
+	hal_log_info("idle_pipe_unref(%p): %d", pipe, pipe->refs - 1);
+
+	if (__sync_sub_and_fetch(&pipe->refs, 1))
+		return;
+
+	idle_pipe_free(pipe);
+}
 
 static bool pipe_match_addr(const void *a, const void *b)
 {
@@ -240,30 +279,31 @@ static bool io_read(struct l_io *io, void *user_data)
 	return true;
 }
 
-static void remove_pipe_oneshot(void *user_data)
+static void remove_pipe_oneshot_destroy(void *user_data)
 {
-	struct l_idle *idle = user_data;
-	/* Calls radio_idle_destroy */
-	l_idle_remove(idle);
+	struct idle_pipe *pipe = user_data;
+	idle_pipe_unref(pipe);
 }
 
+static void remove_pipe_oneshot(void *user_data)
+{
+	struct idle_pipe *pipe = user_data;
+	/* Calls radio_idle_destroy */
+	l_idle_remove(pipe->idle);
+}
+
+/* Called at adapter_stop() */
 static void pipe_destroy(void *user_data)
 {
 	struct idle_pipe *pipe = user_data;
 
-	if (pipe->rxsock)
-		hal_comm_close(pipe->rxsock);
-
-	if (pipe->txsock)
-		close(pipe->txsock);
-
-	l_free(pipe);
+	l_idle_remove(pipe->idle);
+	idle_pipe_unref(pipe);
 }
 
 static void radio_idle_destroy(void *user_data)
 {
-	l_queue_remove(adapter.idle_list, user_data);
-	pipe_destroy(user_data);
+	idle_pipe_unref(user_data);
 }
 
 static void radio_idle_read(struct l_idle *idle, void *user_data)
@@ -307,7 +347,11 @@ done:
 		device_set_connected(device, true);
 	} else {
 		l_hashmap_insert(adapter.offline_list, &pipe->addr, device);
-		l_idle_oneshot(remove_pipe_oneshot, pipe->idle, NULL);
+		if (l_queue_remove(adapter.idle_list, pipe) == false)
+			return;
+
+		l_idle_oneshot(remove_pipe_oneshot, pipe,
+			       remove_pipe_oneshot_destroy);
 	}
 }
 
@@ -346,7 +390,7 @@ static bool paging_foreach(const void *key, void *value, void *user_data)
 	if (!pipe)
 		return false;
 
-	l_idle_oneshot(remove_pipe_oneshot, pipe->idle, NULL);
+	l_idle_oneshot(remove_pipe_oneshot, pipe, remove_pipe_oneshot_destroy);
 
 	return true;
 }
@@ -365,7 +409,7 @@ static bool online_foreach(const void *key, void *value, void *user_data)
 	if (!pipe)
 		return false;
 
-	l_idle_oneshot(remove_pipe_oneshot, pipe->idle, NULL);
+	l_idle_oneshot(remove_pipe_oneshot, pipe, remove_pipe_oneshot_destroy);
 
 	return true;
 }
@@ -422,6 +466,9 @@ static void evt_disconnected(struct mgmt_nrf24_header *mhdr)
 				  L_INT_TO_PTR(pipe->rxsock));
 	/* Remove & destroy idle */
 	l_idle_remove(pipe->idle);
+	pipe->idle = NULL;
+
+	idle_pipe_unref(pipe);
 
 	if (!device) {
 		/* Connection might be in progress */
@@ -530,13 +577,14 @@ static int8_t evt_presence(struct mgmt_nrf24_header *mhdr, ssize_t rbytes)
 
 	/* Monitor traffic from radio */
 	pipe = l_new(struct idle_pipe, 1);
+	pipe->refs = 0;
 	pipe->rxsock = nsk; /* Radio */
 	pipe->txsock = sock; /* knotd */
 	pipe->addr = evt->mac;
 	pipe->timestamp = hal_time_ms();
-	pipe->idle = l_idle_create(radio_idle_read, pipe,
+	pipe->idle = l_idle_create(radio_idle_read, idle_pipe_ref(pipe),
 				   radio_idle_destroy);
-	l_queue_push_head(adapter.idle_list, pipe);
+	l_queue_push_head(adapter.idle_list, idle_pipe_ref(pipe));
 
 	l_hashmap_remove(adapter.offline_list, &evt->mac);
 	l_hashmap_insert(adapter.paging_list, &evt->mac, device);

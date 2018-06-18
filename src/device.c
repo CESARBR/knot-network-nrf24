@@ -55,6 +55,8 @@ struct nrf24_device {
 
 static void device_free(struct nrf24_device *device)
 {
+	hal_log_info("device_free(%p)", device);
+
 	if (device->msg)
 		l_dbus_message_unref(device->msg);
 
@@ -72,6 +74,8 @@ static struct nrf24_device *device_ref(struct nrf24_device *device)
 
 	__sync_fetch_and_add(&device->refs, 1);
 
+	hal_log_info("device_ref(%p): %d", device, device->refs);
+
 	return device;
 }
 
@@ -79,6 +83,8 @@ static void device_unref(struct nrf24_device *device)
 {
 	if (unlikely(!device))
 		return;
+
+	hal_log_info("device_unref(%p): %d", device, device->refs - 1);
 
 	if (__sync_sub_and_fetch(&device->refs, 1))
 		return;
