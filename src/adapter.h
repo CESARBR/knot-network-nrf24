@@ -23,3 +23,6 @@ struct nrf24_adapter;
 
 int adapter_start(const struct nrf24_mac *mac);
 void adapter_stop(void);
+
+int adapter_enable(void);
+void adapter_disable(void);

@@ -670,8 +670,6 @@ static int radio_init(uint8_t channel, const struct nrf24_mac *addr)
 		goto done;
 	}
 
-	mgmt_idle = l_idle_create(mgmt_idle_read, NULL, NULL);
-	mgmt_timeout = l_timeout_create(5, mgmt_timeout_cb, NULL, NULL);
 	hal_log_info("Radio initialized");
 
 	return 0;
@@ -685,10 +683,6 @@ static void radio_stop(void)
 {
 	/* TODO: disconnect clients */
 	hal_comm_close(mgmtfd);
-	if (mgmt_idle)
-		l_idle_remove(mgmt_idle);
-	if (mgmt_timeout)
-		l_timeout_remove(mgmt_timeout);
 
 	hal_comm_deinit();
 }
@@ -829,11 +823,17 @@ int adapter_start(const struct nrf24_mac *mac)
 		tcp_port = settings.port;
 	}
 
-	ret = radio_init(settings.channel, mac);
-	if (ret < 0)
-		return ret;
-
 	memset(&adapter, 0, sizeof(struct nrf24_adapter));
+	adapter.path = l_strdup(path);
+	adapter.addr = *mac;
+	adapter.powered = true;
+
+	return radio_init(settings.channel, &adapter.addr);
+}
+
+int adapter_enable(void)
+{
+	adapter.powered = true;
 	adapter.idle_list = l_queue_new();
 	adapter.online_list = l_hashmap_new();
 	adapter.offline_list = l_hashmap_new();
@@ -847,10 +847,6 @@ int adapter_start(const struct nrf24_mac *mac)
 	l_hashmap_set_key_free_function(adapter.offline_list, nrf24_destroy);
 	l_hashmap_set_key_free_function(adapter.paging_list, nrf24_destroy);
 
-	adapter.path = l_strdup(path);
-	adapter.addr = *mac;
-	adapter.powered = true;
-
 	/* nRF24 Adapter object */
 	if (!l_dbus_register_interface(dbus_get_bus(),
 				       ADAPTER_INTERFACE,
@@ -859,18 +855,18 @@ int adapter_start(const struct nrf24_mac *mac)
 		hal_log_error("dbus: unable to register %s", ADAPTER_INTERFACE);
 
 	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 path,
+					 adapter.path,
 					 ADAPTER_INTERFACE,
 					 &adapter))
 	    hal_log_error("dbus: unable to add %s to %s",
-					ADAPTER_INTERFACE, path);
+					ADAPTER_INTERFACE, adapter.path);
 
 	if (!l_dbus_object_add_interface(dbus_get_bus(),
-					 path,
+					 adapter.path,
 					 L_DBUS_INTERFACE_PROPERTIES,
 					 &adapter))
 	    hal_log_error("dbus: unable to add %s to %s",
-					L_DBUS_INTERFACE_PROPERTIES, path);
+			  L_DBUS_INTERFACE_PROPERTIES, adapter.path);
 
 	/* Register device interface */
 	device_start();
@@ -878,18 +874,28 @@ int adapter_start(const struct nrf24_mac *mac)
 	storage_foreach_nrf24_keys(settings.nodes_fd,
 				   register_device, &adapter);
 
+	mgmt_idle = l_idle_create(mgmt_idle_read, NULL, NULL);
+	mgmt_timeout = l_timeout_create(5, mgmt_timeout_cb, NULL, NULL);
+
 	return 0;
 }
 
-void adapter_stop(void)
+void adapter_disable(void)
 {
+	adapter.powered = false;
+
+	if (mgmt_idle) {
+		l_idle_remove(mgmt_idle);
+		mgmt_idle = NULL;
+	}
+
+	if (mgmt_timeout) {
+		l_timeout_remove(mgmt_timeout);
+		mgmt_timeout = NULL;
+	}
 
 	l_dbus_unregister_interface(dbus_get_bus(),
 				    ADAPTER_INTERFACE);
-
-	radio_stop();
-
-	l_free(adapter.path);
 
 	device_stop();
 
@@ -901,4 +907,10 @@ void adapter_stop(void)
 			(l_hashmap_destroy_func_t ) device_destroy);
 	l_hashmap_destroy(adapter.online_list,
 			(l_hashmap_destroy_func_t ) device_destroy);
+}
+
+void adapter_stop(void)
+{
+	radio_stop();
+	l_free(adapter.path);
 }

@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 		goto fail_manager_start;
 	}
 
-#if 0
+#if 1
 	hal_log_info("Switching to nobody ...");
 	/* Set user id to nobody */
 	if (setuid(65534) != 0) {
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
 	l_main_exit();
 
 fail_detach:
-// fail_setuid:
+fail_setuid:
 	manager_stop();
 
 fail_manager_start:

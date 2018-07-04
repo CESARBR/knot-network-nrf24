@@ -39,47 +39,24 @@
 #include "settings.h"
 
 static struct l_dbus_client *client;
-static bool adapter_enabled = false;
 
 static void service_available(struct l_dbus_client *client, void *user_data)
 {
-	struct nrf24_mac mac = { .address.uint64 = 0 };
-	char *mac_str;
+	hal_log_info("Service (knotd) available. Enabling local adapter ...");
 
-	hal_log_info("Service (knotd) available. Starting local adapter ...");
-
-	mac_str = storage_read_key_string(settings.config_fd,
-					  "Radio", "Address");
-	if (mac_str != NULL)
-		nrf24_str2mac(mac_str, &mac);
-	else
-		mac_str = l_new(char, 24);
-
-	/* Command line arguments have higher priority */
-	if (mac.address.uint64 == 0) {
-		hal_getrandom(&mac, sizeof(mac));
-		nrf24_mac2str(&mac, mac_str);
-		storage_write_key_string(settings.config_fd,
-					 "Radio", "Address", mac_str);
-	}
-
-	l_free(mac_str);
-
-	if (adapter_start(&mac) != 0)
-		hal_log_error("Critical error: Can't start local adapter");
-	else
-		adapter_enabled = true;
+	adapter_enable();
 }
 
 static void service_unavailable(struct l_dbus *dbus, void *user_data)
 {
-	hal_log_info("Service (knotd) unavailable. Stopping local adapter ...");
-	adapter_stop();
-	adapter_enabled = false;
+	hal_log_info("Service(knotd) unavailable. Disabling local adapter ...");
+	adapter_disable();
 }
 
 int manager_start(void)
 {
+	struct nrf24_mac mac = { .address.uint64 = 0 };
+	char *mac_str;
 	int cfg_channel = 76, cfg_dbm = 0;
 
 	settings.config_fd = storage_open(settings.config_filename);
@@ -115,6 +92,22 @@ int manager_start(void)
 	if (settings.dbm == -255)
 		settings.dbm = cfg_dbm;
 
+	mac_str = storage_read_key_string(settings.config_fd,
+					  "Radio", "Address");
+	if (mac_str == NULL) {
+		mac_str = l_new(char, 24);
+		hal_getrandom(&mac, sizeof(mac));
+		nrf24_mac2str(&mac, mac_str);
+		storage_write_key_string(settings.config_fd,
+					 "Radio", "Address", mac_str);
+	} else
+		nrf24_str2mac(mac_str, &mac);
+
+	l_free(mac_str);
+
+	if (adapter_start(&mac) != 0)
+		hal_log_error("Critical error: Can't start local adapter");
+
 	dbus_start();
 
 	/* Enable adapter & radio if service is available only */
@@ -147,7 +140,6 @@ void manager_stop(void)
 	storage_close(settings.nodes_fd);
 
 	l_dbus_client_destroy(client);
-	if (adapter_enabled)
-		adapter_stop();
+	adapter_stop();
 	dbus_stop();
 }
