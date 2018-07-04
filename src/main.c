@@ -103,17 +103,16 @@ int main(int argc, char *argv[])
 		goto fail_manager_start;
 	}
 
-#if 1
-	hal_log_info("Switching to nobody ...");
-	/* Set user id to nobody */
-	if (setuid(65534) != 0) {
+	hal_log_info("Switching to user 'knot'...");
+	/* Set user id to knot  */
+	if (setuid(1003) != 0) {
 		err = errno;
-		hal_log_error("Set uid to nobody failed. %s(%d).",
+		hal_log_error("Set uid to 'knot' failed. %s(%d).",
 			      strerror(err), err);
 		retval = EXIT_FAILURE;
 		goto fail_setuid;
 	}
-#endif
+
 	if (settings.detach) {
 		if (daemon(0, 0)) {
 			hal_log_error("Can't start daemon!");
