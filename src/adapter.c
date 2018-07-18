@@ -175,8 +175,10 @@ static int unix_connect(void)
 	memcpy(addr.sun_path + 1, KNOTD_UNIX_ADDRESS,
 					strlen(KNOTD_UNIX_ADDRESS));
 
-	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1)
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
@@ -225,8 +227,10 @@ static int tcp_connect(void)
 	}
 
 	err = connect(sock, (struct sockaddr *) &server, sizeof(server));
-	if (err < 0)
+	if (err < 0) {
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
