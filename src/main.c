@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <signal.h>
 
 #include <ell/ell.h>
 
@@ -57,8 +58,7 @@ static void terminate(void)
 	quit_to = l_timeout_create(1, main_loop_quit, NULL, NULL);
 }
 
-static void signal_handler(struct l_signal *signal, uint32_t signo,
-							void *user_data)
+static void signal_handler(uint32_t signo, void *user_data)
 {
 	switch (signo) {
 	case SIGINT:
@@ -70,9 +70,7 @@ static void signal_handler(struct l_signal *signal, uint32_t signo,
 
 int main(int argc, char *argv[])
 {
-	struct l_signal *sig;
 	int err, retval = 0;
-	sigset_t mask;
 
 	if (!settings_parse(argc, argv, &settings))
 		return EXIT_FAILURE;
@@ -88,12 +86,6 @@ int main(int argc, char *argv[])
 			      settings.host, settings.port);
 	if (!l_main_init())
 		return EXIT_FAILURE;
-
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGINT);
-	sigaddset(&mask, SIGTERM);
-
-	sig = l_signal_create(&mask, signal_handler, NULL, NULL);
 
 	hal_log_info("Starting manager ...");
 	err = manager_start();
@@ -121,9 +113,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	l_main_run();
+	l_main_run_with_signal(signal_handler, NULL);
 
-	l_signal_remove(sig);
 	if (quit_to)
 		l_timeout_remove(quit_to);
 

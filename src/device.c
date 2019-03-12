@@ -100,7 +100,7 @@ static struct l_dbus_message *method_pair(struct l_dbus *dbus,
 	char mac_str[24];
 
 	if (device->paired)
-		return dbus_error_already_exists(msg, "Already paired");
+		return dbus_error_already_exists(msg);
 
 	if (device->msg)
 		return dbus_error_busy(msg);

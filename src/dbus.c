@@ -27,11 +27,10 @@
 
 static struct l_dbus *g_dbus = NULL;
 
-struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg,
-						 const char *emsg)
+struct l_dbus_message *dbus_error_already_exists(struct l_dbus_message *msg)
 {
 	return l_dbus_message_new_error(msg, NRF24_SERVICE ".AlreadyExists",
-					emsg);
+					"Already paired");
 }
 
 struct l_dbus_message *dbus_error_busy(struct l_dbus_message *msg)
